@@ -1,0 +1,25 @@
+name: discord-vapi
+version: 0.1.0
+kind: standalone
+platforms: [linux]
+description: Discord Voice bridge via Vapi.ai WebSocket transport
+python_requirements:
+  - requirements.txt
+provides_tools:
+  - voice_vapi
+  - voice_vapi_leave
+  - voice_vapi_status
+requirements_env:
+  - name: VAPI_API_KEY
+    prompt: "Vapi API key (private key)"
+    password: true
+optional_env:
+  - name: VAPI_PUBLIC_KEY
+    prompt: "Vapi public API key (optional)"
+    password: true
+  - name: GEMINI_API_KEY
+    prompt: "Gemini API key (for Vapi LLM provider, optional)"
+    password: true
+  - name: DISCORD_VAPI_PORT
+    prompt: "Local HTTP control port (default: 18944)"
+    password: false

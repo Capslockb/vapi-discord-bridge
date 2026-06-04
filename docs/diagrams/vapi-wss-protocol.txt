@@ -1,0 +1,109 @@
+                  ╔════════════════════════════════════════════════╗
+                  ║     VAPI WSS PROTOCOL (event reference)        ║
+                  ╚════════════════════════════════════════════════╝
+
+  URL:  wss://api.vapi.ai?assistantId={id}&token={auth}
+  ──────────────────────────────────────────────────────────────
+
+  OUTBOUND (client → Vapi)
+  ───────────────────────
+
+  AUDIO FRAME
+  {
+    "type":   "audio",
+    "audio":  "<base64 PCM16 mono 16kHz>"    // 20ms chunks
+  }
+
+  TEXT INJECTION
+  {
+    "type":    "message",
+    "role":    "user",
+    "content": "Reminder: standup in 5 minutes"
+  }
+
+  TOOL CALL RESULT
+  {
+    "type":            "function-call-result",
+    "functionCallId":  "<id from inbound function-call>",
+    "result":          "<string or JSON string>"
+  }
+
+  CONTROL — start
+  {
+    "type":             "start",
+    "assistantId":      "<id>",
+    "recordingEnabled": false
+  }
+
+  CONTROL — stop
+  {
+    "type": "stop"
+  }
+
+
+  INBOUND (Vapi → client)
+  ───────────────────────
+
+  TRANSCRIPT
+  {
+    "type": "transcript",
+    "role": "user" | "assistant",
+    "text": "...",
+    "transcriptType": "partial" | "final"
+  }
+
+  AUDIO FRAME
+  {
+    "type":   "audio",
+    "audio":  "<base64 PCM mono 24kHz>"      // 20ms chunks
+  }
+
+  FUNCTION CALL (request to client)
+  {
+    "type":         "function-call",
+    "functionCall": {
+      "id":          "<id>",
+      "name":        "get_weather",
+      "parameters":  { "city": "Amsterdam" }
+    }
+  }
+
+  SPEECH UPDATE
+  {
+    "type":   "speech-update",
+    "status": "started" | "stopped"
+  }
+
+  HANG (Vapi ended the call)
+  {
+    "type": "hang"
+  }
+
+  METADATA
+  {
+    "type": "metadata",
+    "call": { "id": "...", "createdAt": "..." }
+  }
+
+
+  STATE MACHINE (per call instance):
+
+                  ┌────────────┐
+                  │  CONNECTING│  open WSS, send `start`
+                  └─────┬──────┘
+                        │
+                        ▼
+                  ┌────────────┐
+                  │   ACTIVE   │  ◄── audio in/out, transcript
+                  │            │  ◄── function-call (dispatch & respond)
+                  └─────┬──────┘
+                        │
+              ┌─────────┴──────────┐
+              │                    │
+              ▼                    ▼
+        ┌──────────┐         ┌──────────┐
+        │  HANGUP  │         │  ERROR   │
+        │ (hang,   │         │  (WSS    │
+        │  leave)  │         │  closed, │
+        │          │         │  timeout)│
+        └──────────┘         └──────────┘
