@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -151,6 +152,145 @@ def register(ctx):
             },
         },
         handler=_voice_vapi_stop_handler,
+        check_fn=lambda: True,
+        is_async=True,
+    )
+
+    async def _voice_vapi_summary_handler(*args, **kwargs) -> str:
+        """Build a post-call summary from the most recent Vapi voice transcript.
+
+        Args (kwargs):
+          notes_dir: override the JSONL notes directory
+                     (default: ~/.hermes/voice-vapi-notes/)
+          file: explicit transcript path (overrides --latest)
+          json_only: return the JSON payload instead of the markdown sections
+          sections: comma-separated subset of {summary,transcript,tasks,
+                    decisions,questions,followups} (default: all)
+
+        Returns a Discord-friendly markdown (or JSON) string. Falls back to a
+        human error message if the script fails or no transcripts exist.
+        """
+        params = _coerce_tool_args(args, kwargs)
+        notes_dir = params.get("notes_dir") or str(
+            Path.home() / ".hermes" / "voice-vapi-notes"
+        )
+        file_arg = params.get("file")
+        json_only = bool(params.get("json_only"))
+        sections_raw = params.get("sections")
+        try:
+            script_path = PLUGIN_DIR / "post_call_summary.py"
+            if not script_path.exists():
+                # Fall back to the upstream repo location.
+                script_path = (
+                    Path.home() / "vapi-discord-bridge" / "scripts" / "post_call_summary.py"
+                )
+            cmd: list[str] = [
+                sys.executable, str(script_path),
+                "--notes-dir", notes_dir,
+            ]
+            if file_arg:
+                cmd.extend(["--file", str(file_arg)])
+            else:
+                cmd.append("--latest")
+            if json_only:
+                cmd.append("--json")
+            else:
+                if sections_raw:
+                    for sec in str(sections_raw).split(","):
+                        sec = sec.strip()
+                        if sec and sec in {
+                            "summary", "transcript", "tasks",
+                            "decisions", "questions", "followups",
+                        }:
+                            cmd.append(f"--{sec}")
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(), timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                return json.dumps({
+                    "status": "error",
+                    "message": "post_call_summary.py timed out after 30s",
+                })
+            if proc.returncode != 0:
+                err = (stderr_b or b"").decode("utf-8", "replace").strip()
+                return json.dumps({
+                    "status": "error",
+                    "message": f"post_call_summary failed (rc={proc.returncode}): {err or 'no stderr'}",
+                })
+            payload = (stdout_b or b"").decode("utf-8", "replace")
+            if not payload.strip():
+                return json.dumps({
+                    "status": "error",
+                    "message": "post_call_summary returned empty output",
+                })
+            if json_only:
+                return json.dumps({
+                    "status": "success",
+                    "format": "json",
+                    "data": json.loads(payload),
+                })
+            return json.dumps({
+                "status": "success",
+                "format": "markdown",
+                "report": payload,
+            })
+        except SystemExit as exc:
+            return json.dumps({
+                "status": "error",
+                "message": f"no transcripts available (SystemExit {exc.code})",
+            })
+        except Exception as exc:
+            logger.warning("voice_vapi_summary failed: %s", exc)
+            return json.dumps({
+                "status": "error",
+                "message": f"voice_vapi_summary failed: {exc}",
+            })
+
+    ctx.register_tool(
+        name="voice_vapi_summary",
+        toolset="hermes",
+        schema={
+            "name": "voice_vapi_summary",
+            "description": (
+                "Generate a post-call summary from the most recent Vapi voice "
+                "transcript (tasks, decisions, questions, follow-ups, transcript). "
+                "Reads from ~/.hermes/voice-vapi-notes/ — pass --file to target a "
+                "specific transcript, or --latest to use the newest."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notes_dir": {
+                        "type": "string",
+                        "description": "Override the JSONL notes directory.",
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Explicit transcript JSONL path (overrides --latest).",
+                    },
+                    "json_only": {
+                        "type": "boolean",
+                        "description": "Return raw JSON instead of markdown sections.",
+                    },
+                    "sections": {
+                        "type": "string",
+                        "description": (
+                            "Comma-separated subset of "
+                            "{summary,transcript,tasks,decisions,questions,followups}."
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        handler=_voice_vapi_summary_handler,
         check_fn=lambda: True,
         is_async=True,
     )

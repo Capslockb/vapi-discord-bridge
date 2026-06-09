@@ -1,5 +1,5 @@
 name: discord-vapi
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 platforms: [linux]
 description: Discord Voice bridge via Vapi.ai WebSocket transport
@@ -9,6 +9,9 @@ provides_tools:
   - voice_vapi
   - voice_vapi_leave
   - voice_vapi_status
+  - voice_vapi_say
+  - voice_vapi_stop
+  - voice_vapi_summary
 requirements_env:
   - name: VAPI_API_KEY
     prompt: "Vapi API key (private key)"
