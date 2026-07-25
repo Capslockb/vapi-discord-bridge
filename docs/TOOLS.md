@@ -2,6 +2,12 @@
 
 The plugin registers six Hermes tools. Tool arguments are JSON-compatible values even when examples are shown in compact Hermes chat form.
 
+## Authorization boundary
+
+The plugin registers these tools without a per-caller authorization check. Caller-supplied `guild_id`, `channel_id`, and `user_id` values select targets; they are not proof that the caller is allowed to control those targets. In particular, `voice_vapi_stop` without a `guild_id` attempts to stop every registered bridge.
+
+Expose the tools only to trusted operators or enforce user, guild, and command authorization in the surrounding Hermes/Discord gateway. Do not treat Discord identifiers as secrets or access tokens. Invoker-aware and cross-guild authorization work is tracked in [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8).
+
 ## `voice_vapi`
 
 Start a Vapi bridge for a Discord guild.
