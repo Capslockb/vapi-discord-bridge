@@ -86,7 +86,7 @@ The mutating routes are currently unauthenticated. `/say` also places the inject
 
 `DISCORD_VAPI_KEEPALIVE_SECONDS` is currently read but the active keepalive loop sends silence every 20 ms instead of using the configured interval. Treat it as ineffective until the runtime is corrected.
 
-## Autostart
+## Autostart and voice-channel inference
 
 The plugin can start from either an autostart file or environment defaults.
 
@@ -97,7 +97,9 @@ The plugin can start from either an autostart file or environment defaults.
 | `DISCORD_VAPI_KEEP_AUTOSTART_FILE` | `0` | When false, a successful autostart deletes the JSON file. |
 | `DISCORD_VAPI_GUILD_ID` | _(empty)_ | Fallback guild ID when not present in the JSON file. |
 | `DISCORD_VAPI_CHANNEL_ID` | _(empty)_ | Fallback voice channel ID. |
-| `DISCORD_VAPI_USER_ID` | repository-specific default | User whose current voice channel is inferred when guild/channel are absent. Set this explicitly for your deployment. |
+| `DISCORD_VAPI_USER_ID` | repository-specific default | User whose current voice channel is inferred when guild/channel are absent. The `/voice-vapi` and `/voice-vapi-leave` command wrappers also use this fixed ID instead of the command invoker. Set it explicitly for your deployment. |
+
+The current slash-command wrappers do not receive or use the invoking member's Discord ID. Until [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8) is resolved, both commands target the voice state of `DISCORD_VAPI_USER_ID`.
 
 Example:
 
