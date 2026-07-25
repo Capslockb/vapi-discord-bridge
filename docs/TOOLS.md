@@ -44,6 +44,8 @@ voice_vapi_say guild_id=1234567890 text="Reminder: standup in 5 minutes"
 
 Both `guild_id` and `text` are required.
 
+> Privacy limitation: the current handler returns the submitted text in its JSON result. Hermes may retain tool inputs and outputs in conversation history or logs, so do not use this tool for secrets or sensitive personal data. The matching loopback `/say` route also echoes speech text; response redaction is included in the hardening tracked by [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+
 ## `voice_vapi_stop`
 
 Stop one bridge or all active bridges.
