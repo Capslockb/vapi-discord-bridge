@@ -1,109 +1,122 @@
                   ╔════════════════════════════════════════════════╗
-                  ║     VAPI WSS PROTOCOL (event reference)        ║
+                  ║   VAPI WEBSOCKET TRANSPORT — CURRENT RUNTIME  ║
                   ╚════════════════════════════════════════════════╝
 
-  URL:  wss://api.vapi.ai?assistantId={id}&token={auth}
-  ──────────────────────────────────────────────────────────────
+  This is a source-verified map of plugin/bridge.py. It is not a complete
+  reference for every event supported by Vapi.
 
-  OUTBOUND (client → Vapi)
-  ───────────────────────
+  CALL SETUP
+  ──────────
 
-  AUDIO FRAME
-  {
-    "type":   "audio",
-    "audio":  "<base64 PCM16 mono 16kHz>"    // 20ms chunks
-  }
+  1. POST https://api.vapi.ai/call with Bearer authentication.
+  2. Request transport provider "vapi.websocket" with:
+
+     {
+       "audioFormat": {
+         "format": "pcm_s16le",
+         "container": "raw",
+         "sampleRate": 16000
+       }
+     }
+
+  3. Read transport.websocketCallUrl from the response.
+  4. Append /transport only when the returned path does not already end with it.
+  5. Open the returned WebSocket URL. Do not log or publish that URL.
+
+
+  OUTBOUND — bridge → Vapi
+  ────────────────────────
+
+  AUDIO
+
+     Raw binary PCM bytes
+     - signed 16-bit little-endian
+     - mono
+     - 16 kHz
+     - normally produced from decoded Discord 48 kHz stereo audio
+
+  When no user audio is queued, the active keepalive loop sends a raw 20 ms
+  silence chunk. Audio is not wrapped in base64 JSON.
 
   TEXT INJECTION
-  {
-    "type":    "message",
-    "role":    "user",
-    "content": "Reminder: standup in 5 minutes"
-  }
 
-  TOOL CALL RESULT
-  {
-    "type":            "function-call-result",
-    "functionCallId":  "<id from inbound function-call>",
-    "result":          "<string or JSON string>"
-  }
+     {
+       "type": "text",
+       "text": "Reminder: standup in 5 minutes"
+     }
 
-  CONTROL — start
-  {
-    "type":             "start",
-    "assistantId":      "<id>",
-    "recordingEnabled": false
-  }
+  This path is used by voice_vapi_say, the loopback /say route, and the idle
+  prompt.
 
-  CONTROL — stop
-  {
-    "type": "stop"
-  }
+  NOT SENT BY THE CURRENT RUNTIME
+
+     - a manual JSON "start" frame;
+     - a manual JSON "stop" frame;
+     - function-call-result messages.
 
 
-  INBOUND (Vapi → client)
-  ───────────────────────
+  INBOUND — Vapi → bridge
+  ────────────────────────
 
-  TRANSCRIPT
-  {
-    "type": "transcript",
-    "role": "user" | "assistant",
-    "text": "...",
-    "transcriptType": "partial" | "final"
-  }
+  AUDIO
 
-  AUDIO FRAME
-  {
-    "type":   "audio",
-    "audio":  "<base64 PCM mono 24kHz>"      // 20ms chunks
-  }
+     Raw binary PCM bytes
+     - treated as signed 16-bit little-endian
+     - mono
+     - 16 kHz
+     - resampled to Discord 48 kHz stereo for playback
 
-  FUNCTION CALL (request to client)
-  {
-    "type":         "function-call",
-    "functionCall": {
-      "id":          "<id>",
-      "name":        "get_weather",
-      "parameters":  { "city": "Amsterdam" }
-    }
-  }
+  STRING JSON MESSAGES
 
-  SPEECH UPDATE
-  {
-    "type":   "speech-update",
-    "status": "started" | "stopped"
-  }
+     assistant-started
+       Logs the assistant name.
 
-  HANG (Vapi ended the call)
-  {
-    "type": "hang"
-  }
+     conversation-update
+       When status is "interrupted" or "ended", clears buffered playback if
+       DISCORD_VAPI_CLEAR_ON_INTERRUPT is enabled.
 
-  METADATA
-  {
-    "type": "metadata",
-    "call": { "id": "...", "createdAt": "..." }
-  }
+     transcript
+       Reads the text field. If it contains "disconnect", requests bridge
+       shutdown.
+
+     all other JSON
+       Logged at debug level only; no feature dispatch occurs.
+
+  NOT IMPLEMENTED BY THE CURRENT RECEIVE LOOP
+
+     - transcript JSONL persistence;
+     - Vapi function/tool-call dispatch to Hermes;
+     - sending function-call results back to Vapi.
+
+  These gaps are tracked in:
+  https://github.com/Capslockb/vapi-discord-bridge/issues/2
 
 
-  STATE MACHINE (per call instance):
+  CONNECTION STATE
+  ────────────────
 
-                  ┌────────────┐
-                  │  CONNECTING│  open WSS, send `start`
-                  └─────┬──────┘
-                        │
-                        ▼
-                  ┌────────────┐
-                  │   ACTIVE   │  ◄── audio in/out, transcript
-                  │            │  ◄── function-call (dispatch & respond)
-                  └─────┬──────┘
-                        │
-              ┌─────────┴──────────┐
-              │                    │
-              ▼                    ▼
-        ┌──────────┐         ┌──────────┐
-        │  HANGUP  │         │  ERROR   │
-        │ (hang,   │         │  (WSS    │
-        │  leave)  │         │  closed, │
-        │          │         │  timeout)│
-        └──────────┘         └──────────┘
+                  ┌──────────────┐
+                  │ CALL CREATE  │  POST /call, receive WebSocket URL
+                  └──────┬───────┘
+                         │
+                         ▼
+                  ┌──────────────┐
+                  │ CONNECTING   │  open returned /transport WebSocket
+                  └──────┬───────┘
+                         │
+                         ▼
+                  ┌──────────────┐
+                  │ ACTIVE       │  binary PCM + limited JSON handling
+                  └──────┬───────┘
+                         │
+               ┌─────────┴──────────┐
+               │                    │
+               ▼                    ▼
+         ┌───────────┐        ┌───────────┐
+         │ STOPPING  │        │ ERROR /   │
+         │ close WSS │        │ WSS CLOSE │
+         └───────────┘        └───────────┘
+
+  Note: some stop paths currently leave the owning sidecar listener/task alive.
+  Cleanup work is tracked in:
+  https://github.com/Capslockb/vapi-discord-bridge/issues/4
