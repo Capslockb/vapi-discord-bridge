@@ -1,6 +1,6 @@
 # Hermes tools
 
-The plugin registers six Hermes tools. Tool arguments are JSON-compatible values even when examples are shown in the compact Hermes chat form.
+The plugin registers six Hermes tools. Tool arguments are JSON-compatible values even when examples are shown in compact Hermes chat form.
 
 ## `voice_vapi`
 
@@ -60,9 +60,11 @@ voice_vapi_stop
 
 ## `voice_vapi_summary`
 
-Generate a post-call report from a transcript in `~/.hermes/voice-vapi-notes/`.
+Generate a report from an existing compatible JSONL transcript.
 
-Use the latest transcript:
+> Current limitation: the active bridge does not create transcript files after a normal call. Supply a compatible file manually until [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2) is resolved.
+
+Use the newest compatible file in the default directory:
 
 ```text
 voice_vapi_summary
@@ -89,8 +91,10 @@ voice_vapi_summary json_only=true
 Arguments:
 
 - `notes_dir` — override the transcript directory.
-- `file` — explicit transcript path; otherwise the newest transcript is used.
+- `file` — explicit transcript path; otherwise the newest compatible file is used.
 - `json_only` — return structured JSON instead of Markdown.
 - `sections` — comma-separated subset of `summary`, `transcript`, `tasks`, `decisions`, `questions`, and `followups`.
 
-The summary tool returns an error object when no transcript is available, the helper script fails, or processing exceeds its 30-second timeout.
+The summary tool returns an error object when no transcript is available, the helper script fails, the JSONL shape is incompatible, or processing exceeds its 30-second timeout.
+
+Treat transcript inputs and generated reports as sensitive data. Do not commit them or paste unredacted contents into public issues.
