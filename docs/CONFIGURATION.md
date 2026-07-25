@@ -56,11 +56,13 @@ Until [Issue #1](https://github.com/Capslockb/vapi-discord-bridge/issues/1) is f
 
 Current routes:
 
-- `GET /health` — read bridge status.
+- `/health` — read bridge status.
 - `/stop` — stop the active bridge.
 - `/say?text=...` — inject text into the active Vapi call.
 
-The mutating routes are currently unauthenticated. Keep the listener loopback-only and do not expose it through a reverse proxy or public tunnel. Hardening is tracked in [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+The current parser dispatches solely by URL path and does not enforce the HTTP method. Unexpected methods reaching one of these paths can therefore trigger the same handler.
+
+The mutating routes are currently unauthenticated. `/say` also places the injected text in the URL and echoes it in the JSON response; request method, `Host`, and request-size validation are not yet enforced. Keep the listener loopback-only and do not expose it through a reverse proxy, public tunnel, LAN bind, or container port mapping. Hardening is tracked in [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 
 ## Auto-leave and idle prompt
 
