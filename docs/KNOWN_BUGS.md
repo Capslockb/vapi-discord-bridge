@@ -52,11 +52,15 @@ Some Discord voice endpoints have been observed rejecting several initial handsh
 
 This is environment-dependent; do not treat one observed Amsterdam CDN hostname or an exact retry count as universal behavior.
 
-### 6. Stale rejoin entries
+### 6. Some stop paths leave the sidecar task registered
 
-A previously disconnected guild may remain in `_active_bridges` while its voice client is no longer connected.
+`BRIDGE.stop()` disconnects the Vapi and Discord resources, but the owning `run_sidecar()` task can remain blocked in `server.serve_forever()`. The loopback listener and a stopped `_active_bridges` entry may therefore remain after the HTTP `/stop` route or `voice_vapi_stop` tool is used.
 
-The current `voice_vapi()` path detects this state, cancels the old task, removes the stale entry, and starts again. Report a bug if the command still remains permanently in `pending` state.
+The next `voice_vapi()` start normally detects the disconnected voice client and performs stale-entry recovery, but status and immediate restart behavior should not depend on that fallback.
+
+**Workaround:** prefer `/voice-vapi-leave` or `voice_vapi_leave` when a clean task cancellation and registry removal are required.
+
+**Tracking:** [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4).
 
 ### 7. Only one voice bridge per guild
 
