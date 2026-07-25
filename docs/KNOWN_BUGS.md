@@ -1,98 +1,139 @@
-# Known bugs & quirks
+# Known bugs and limitations
 
-> The canonical bug list for the vapi-discord-bridge. If you hit something not on here, please open an issue with the reproduction steps.
+> Canonical operator-facing limitation list for `vapi-discord-bridge`. Open a focused issue when a reproducible problem is not covered here.
 
-## Critical
+## High-priority gaps
 
-### 1. Discord CDN handshake rejection (`code 4006`)
+### 1. Installer and runtime configuration drift
 
-**Symptom:** `channel.connect()` takes ~27 seconds to complete. The first ~5 handshakes are rejected with code 4006; the 6th succeeds.
+**Symptom:** installer selections for voice, first message, or a non-OpenAI model appear to succeed but do not change the running transient assistant.
 
-**Root cause:** This machine's Discord voice WebSocket endpoint (`c-ams08.discord.media` / `c-ams07`) has been observed to always reject initial handshakes. It's a Discord infrastructure quirk, not a bridge bug.
+**Cause:** the installer writes `VAPI_VOICE`, `VAPI_FIRST_MESSAGE`, and optionally `GEMINI_API_KEY`, while the runtime reads `VAPI_VOICE_PROVIDER`, `VAPI_VOICE_ID`, `VAPI_MODEL_NAME`/`VAPI_MODEL`, and `VAPI_SYSTEM_PROMPT`. The inline runtime path also hard-codes the model provider to OpenAI.
 
-**Workaround:** The bridge waits up to 60 s for the secret key to be ready. Just be patient.
+**Workaround:** use a saved `VAPI_ASSISTANT_ID`, or set the verified runtime keys manually.
 
-**DO NOT** keep restarting the gateway to "retry" — every restart resets the retry clock and you'll hit the rate limit harder.
+**Tracking:** [Issue #1](https://github.com/Capslockb/vapi-discord-bridge/issues/1).
 
-### 2. Stale rejoin — "Bridge still starting" hang
+### 2. Calls do not create summary-compatible transcript files
 
-**Symptom:** Calling `/voice-vapi` after a previous disconnect sometimes returns `pending: "Bridge is being started"` forever.
+**Symptom:** `voice_vapi_summary` reports that no transcript is available after a normal call.
 
-**Root cause:** `_active_bridges[guild_id]` still has an entry, but `voice_client.is_connected()` returns False. The plugin used to return "pending" in this case.
+**Cause:** the current bridge processes incoming transcript messages in memory but does not persist JSONL files under `~/.hermes/voice-vapi-notes/`.
 
-**Fix (shipped in `__init__.py:voice_vapi()`):** the plugin detects a stale entry (vc is None or not connected), cancels the old task, pops the entry from `_active_bridges`, and starts fresh.
+**Workaround:** pass an externally created compatible JSONL file to the summary tool.
 
-### 3. Sidecar HTTP server hangs `serve_forever()`
+**Tracking:** [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
 
-**Symptom:** `bridge.py:run_sidecar()` uses `http.server.HTTPServer.serve_forever()` which never returns on its own. Without a shutdown signal, you can't cleanly stop the bridge.
+### 3. Vapi function-call dispatch is not implemented
 
-**Fix (shipped in `bridge.py:run_sidecar()`):** an `_shutdown_watcher` task polls `BRIDGE._running` and calls `server.shutdown()` once it goes False, breaking `serve_forever()`.
+The active WebSocket receive loop handles assistant status, conversation updates, transcript text, and binary audio. It does not currently route Vapi function/tool calls to Hermes handlers.
 
-## Coexistence with the Gemini bridge
+Do not configure a production assistant on the assumption that this bridge will execute Vapi tool calls until Issue #2 is resolved and tested.
 
-### 4. Two plugins fighting for the voice client
+### 4. Mutating HTTP routes are unauthenticated
 
-If both `discord-voice` and `discord-vapi` plugins are loaded and you trigger `/voice-vapi` while a Gemini bridge is connected, the Vapi plugin force-disconnects the existing voice client first. The reverse is also true. This is by design — only one voice bridge per guild at a time.
+The control listener binds to `127.0.0.1`, but `/stop` and `/say?text=...` do not require a secret.
 
-**Best practice:** don't have both autostart files present at the same time. Pick one to be primary.
+**Risk:** any local process able to reach the port can stop the bridge or inject speech into an active call.
 
-### 5. Stale autostart file causes boot loops
+**Workaround:** keep the listener loopback-only. Do not expose it through a reverse proxy, tunnel, LAN bind, or container port mapping.
 
-If a `voice-vapi-autostart.json` file is left over from a previous test session, the gateway will auto-join on every boot. Always clear the file after testing:
+**Tracking:** [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+
+## Discord voice behavior
+
+### 5. Voice connection retries can look like a hang
+
+Some Discord voice endpoints have been observed rejecting several initial handshakes before a later retry succeeds.
+
+**Symptom:** `channel.connect()` takes tens of seconds and logs repeated voice handshake failures.
+
+**Workaround:** allow the configured 60-second connection timeout to finish. Repeated gateway restarts reset the retry sequence and can make rate limiting worse.
+
+This is environment-dependent; do not treat one observed Amsterdam CDN hostname or an exact retry count as universal behavior.
+
+### 6. Stale rejoin entries
+
+A previously disconnected guild may remain in `_active_bridges` while its voice client is no longer connected.
+
+The current `voice_vapi()` path detects this state, cancels the old task, removes the stale entry, and starts again. Report a bug if the command still remains permanently in `pending` state.
+
+### 7. Only one voice bridge per guild
+
+`discord-vapi` and another Discord voice bridge share the guild voice-client slot. Starting one may force-disconnect the other.
+
+**Best practice:** select one active bridge per guild and avoid enabling competing autostart configurations simultaneously.
+
+## Autostart
+
+### 8. Autostart file lifecycle
+
+A successful autostart deletes `~/.hermes/voice-vapi-autostart.json` by default. Set `DISCORD_VAPI_KEEP_AUTOSTART_FILE=1` only when persistent rejoin-on-boot behavior is intentional.
+
+If startup never succeeds, the file remains available for the retry window and can trigger again on the next gateway start. Remove it to stop retries:
 
 ```bash
 rm -f ~/.hermes/voice-vapi-autostart.json
 ```
 
-(On 2026-05-28 a stale `voice-live-autostart.json` caused Gemini to autostart on every boot, blocking Vapi/Sora. Same risk applies the other direction.)
+### 9. Repository-specific default user ID
 
-## Workarounds (not yet "fixed")
+The plugin contains a default `DISCORD_VAPI_USER_ID`. Set your own deployment value explicitly instead of relying on the repository default when autostart infers a voice channel from a user.
 
-### 6. Module import path
+## Configuration and tuning
 
-The installed plugin directory is named `discord-vapi`. Because the name contains a hyphen, it is not a valid identifier in a normal Python `import` statement. Hermes loads the plugin from its directory; avoid trying to import `discord-vapi` directly in custom Python code.
+### 10. Voice display names are not voice IDs
 
-### 7. Function-calling handlers must be non-blocking
+The inline assistant sends a provider-specific `voiceId`. Human-readable names such as `jennifer` may not be valid IDs for the selected provider.
 
-If a custom `function-call` handler blocks for >10 seconds, the Vapi WSS times out. Keep tool handlers quick or push long work to a background task.
+Use the exact provider and voice ID from Vapi, or configure them on a saved Vapi assistant.
 
-### 8. Voice ID spelling
+### 11. Some defined tuning variables are ineffective
 
-Vapi voice IDs are case-sensitive. `jennifer` works, `Jennifer` does not. If unsure, list voices via the Vapi dashboard.
+- `DISCORD_VAPI_KEEPALIVE_SECONDS` is read, but the active keepalive loop sends silence every 20 ms and does not use the configured interval.
+- `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` appears in health output but is not used as a separate watchdog threshold.
+- `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` is defined but should not be relied on until its runtime use is verified.
 
-## Performance
+### 12. Module import path
 
-### 9. Opus decoder state corruption under packet loss
+The installed plugin directory is named `discord-vapi`. A hyphen is not valid in a normal Python import identifier, so this is invalid:
 
-**Symptom:** `undecodable Opus frame` errors in the logs.
+```python
+import discord-vapi
+```
 
-**Root cause:** Decoder state corruption. Self-heals on the next valid frame. **>100 errors in 5 seconds = real network issue**, not normal background noise.
+Hermes loads the plugin from its filesystem path. Custom Python code should not import the directory name directly.
 
-## Cost
+## Cost and privacy
 
-### 10. Idle calls still cost money
+### 13. Idle calls may continue consuming paid services
 
-Vapi charges per minute **even when the model is silent**, because the LLM is still loaded and the WSS is open. Use `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` to cap idle time.
+An open Vapi call can continue incurring charges even when conversation is quiet. Configure `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS`, verify current provider pricing, and monitor unattended sessions.
 
-## Compatibility
+### 14. Transcript inputs are sensitive
 
-### 11. Older Vapi plans don't support `transient` calls
+Although the current bridge does not persist transcripts itself, any JSONL files supplied to the summary tool may contain private voice content, tool arguments, and identifiers. Store them with restrictive permissions and do not commit them.
 
-If you get a 403 when starting the call saying "transient calls not enabled on this account", either:
-- upgrade your Vapi plan
-- set `VAPI_ASSISTANT_ID` to a preconfigured assistant (not transient)
+## Reporting a new bug
 
-### 12. Discord voice rate limits
+Include:
 
-If you call `/voice-vapi` repeatedly without waiting, Discord will throttle. The bridge has a `_starting` guard that returns `pending` for 30 s, but be patient.
+1. Hermes gateway version: `hermes --version`.
+2. Plugin version: `cat plugin/plugin.yaml | head -3`.
+3. Whether `VAPI_ASSISTANT_ID` is set.
+4. Effective model provider/model and voice provider/ID, with secrets removed.
+5. Last 100 gateway log lines:
 
-## Reporting new bugs
+   ```bash
+   journalctl --user -u hermes-gateway --since '5 min ago' --no-pager -o cat | tail -100
+   ```
 
-When opening an issue, include:
+6. Health output:
 
-1. **Hermes gateway version** — `hermes --version`
-2. **Plugin version** — `cat plugin/plugin.yaml | head -3`
-3. **Vapi model + voice** in use
-4. **Last 100 lines of `journalctl --user -u hermes-gateway --since '5 min ago' --no-pager -o cat`**
-5. **Health JSON** — `curl -s http://127.0.0.1:18944/health | python3 -m json.tool`
-6. **Repro steps** — `/voice-vapi` then `...` then expected vs actual
+   ```bash
+   curl -s http://127.0.0.1:18944/health | python3 -m json.tool
+   ```
+
+7. Exact reproduction steps and expected versus actual behavior.
+
+Never include Discord tokens, Vapi keys, transcript contents, or private user/channel identifiers in a public issue.
