@@ -114,7 +114,17 @@ Use the exact provider and voice ID from Vapi, or configure them on a saved Vapi
 
 **Tracking:** [Issue #11](https://github.com/Capslockb/vapi-discord-bridge/issues/11).
 
-### 13. Module import path
+### 13. Quiet activity includes every non-empty PCM frame
+
+The bridge resets `_last_activity_at` whenever it receives a non-empty PCM frame from a non-bot Discord user. It does not currently require detected speech: the existing energy helper and silence counters are not used by the active sink path.
+
+**Impact:** silence, background noise, or other sub-speech PCM can postpone the idle prompt and positive quiet auto-leave threshold. The `quiet_seconds` health value is therefore time since the last qualifying inbound frame, not verified time since the last spoken activity.
+
+**Workaround:** treat the timers as best-effort operational aids. Monitor unattended calls and stop them explicitly; do not use quiet auto-leave as the sole provider-cost cap.
+
+**Tracking:** [Issue #12](https://github.com/Capslockb/vapi-discord-bridge/issues/12).
+
+### 14. Module import path
 
 The installed plugin directory is named `discord-vapi`. A hyphen is not valid in a normal Python import identifier, so this is invalid:
 
@@ -126,11 +136,11 @@ Hermes loads the plugin from its filesystem path. Custom Python code should not 
 
 ## Cost and privacy
 
-### 14. Idle calls may continue consuming paid services
+### 15. Idle calls may continue consuming paid services
 
-An open Vapi call can continue incurring charges even when conversation is quiet. Configure a tested positive `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` value, verify current provider pricing, and monitor unattended sessions. Until Issue #11 is resolved, do not use `0` as a disable value and assume the documented behavior is reliable.
+An open Vapi call can continue incurring charges even when conversation is quiet. Configure a tested positive `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` value, verify current provider pricing, and monitor unattended sessions. Until Issues [#11](https://github.com/Capslockb/vapi-discord-bridge/issues/11) and [#12](https://github.com/Capslockb/vapi-discord-bridge/issues/12) are resolved, the timer is not a dependable disable control or speech-inactivity cost cap.
 
-### 15. Transcript inputs are sensitive
+### 16. Transcript inputs are sensitive
 
 Although the current bridge does not persist transcripts itself, any JSONL files supplied to the summary tool may contain private voice content, tool arguments, and identifiers. Store them with restrictive permissions and do not commit them.
 
