@@ -59,7 +59,7 @@ Vapi model, voice, and pricing availability change over time. Check the Vapi das
 /voice-vapi
 ```
 
-The bot joins the invoking user's current voice channel and starts the bridge.
+The current slash-command wrapper does not use the invoking member's Discord identity. It looks up the user configured by `DISCORD_VAPI_USER_ID` and joins that account's current voice channel. Set the variable explicitly; otherwise the repository-specific fallback is used. Invoker-aware behavior is tracked in [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8).
 
 ### Hermes tools
 
@@ -126,7 +126,6 @@ A saved assistant supplies its configured provider, model, voice, tools, transcr
 ### Inline transient assistant
 
 Used only when `VAPI_ASSISTANT_ID` is empty:
-
 ```env
 VAPI_MODEL_NAME=gpt-4o-mini
 VAPI_SYSTEM_PROMPT=You are a helpful AI assistant.
