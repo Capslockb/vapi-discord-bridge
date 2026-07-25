@@ -1,19 +1,15 @@
 # Vapi Discord Bridge
 
-> Discord voice channel ↔ Vapi.ai WebSocket transport, packaged as a [Hermes Agent](https://hermes-agent.nousresearch.com) plugin.
+> Discord voice channel ↔ Vapi WebSocket transport, packaged as a [Hermes Agent](https://hermes-agent.nousresearch.com) plugin.
 
-Drop a Vapi-powered voice agent into any Discord voice channel. Low-latency full-duplex audio, text-to-speech, speech-to-text, configurable assistant, and a 3-minute oneshot installer.
+Drop a Vapi-powered voice assistant into a Discord voice channel. The current runtime provides full-duplex PCM audio transport, bridge lifecycle tools, a loopback health/control endpoint, autostart support, and an optional post-call summary reader for compatible JSONL files.
 
-```
-  Discord user ──► Discord UDP ──► [NaCl] ──► Opus ──► Vapi WSS
-  Discord user ◄── Discord UDP ◄── [NaCl] ◄── Opus ◄── Vapi WSS
-                                    │
-                                    └──► JSONL transcript at ~/.hermes/voice-vapi-notes/
+```text
+Discord user ──► Discord UDP ──► Opus decode ──► PCM 16 kHz ──► Vapi WSS
+Discord user ◄── Discord UDP ◄── PCM 48 kHz  ◄── PCM 16 kHz ◄── Vapi WSS
 ```
 
----
-
-## ⚡ Quick install (3 min)
+## Quick install
 
 ```bash
 git clone https://github.com/Capslockb/vapi-discord-bridge.git
@@ -21,56 +17,61 @@ cd vapi-discord-bridge
 python3 installer/install.py
 ```
 
-The installer walks you through every step interactively:
+The installer performs:
 
 | Step | What happens |
 |------|--------------|
-| 1    | System preflight — detects Python, Hermes home, venv, git, gh |
-| 2    | API key collection — Discord bot token + Vapi private key (with **live network validation**) |
-| 3    | Install mode — copy into `~/.hermes/plugins/`, symlink, or local |
-| 4    | Plugin deployment — copies files, fixes perms, runs `pip install` |
-| 5    | `.env` merge — writes keys to `~/.hermes/.env` (chmod 600) |
-| 6    | Optional autostart — drops `voice-vapi-autostart.json` so the bridge joins on gateway boot |
+| 1 | System preflight for Python, Hermes home, venv, git, and `gh`. |
+| 2 | Discord bot token and Vapi private-key collection with live validation. |
+| 3 | Copy, symlink, or local installation mode. |
+| 4 | Plugin deployment, permissions, and Python dependency installation. |
+| 5 | Merge selected values into `~/.hermes/.env` with mode `0600`. |
+| 6 | Optional autostart-file creation. |
 
-**Scripted / CI mode:** add `--yes` (or `-y`) to auto-answer all prompts with defaults:
+For non-interactive installation:
+
 ```bash
 python3 installer/install.py --yes
 ```
 
-No external CLI deps. Only requires `rich` (already in the Hermes venv). Pure stdlib otherwise.
+### Configuration warning
 
----
+The installer currently collects some legacy values that the runtime does not consume, including `VAPI_VOICE`, `VAPI_FIRST_MESSAGE`, and `GEMINI_API_KEY`. Until [Issue #1](https://github.com/Capslockb/vapi-discord-bridge/issues/1) is resolved, use a saved `VAPI_ASSISTANT_ID` or manually configure the runtime keys documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
-## 🧰 What you need
+## Requirements
 
-| Item | Where | Cost |
-|------|-------|------|
-| Discord bot token | [discord.com/developers](https://discord.com/developers/applications) → Bot → Reset Token | free |
-| Vapi private API key | [dashboard.vapi.ai](https://dashboard.vapi.ai) → Account Settings → API Keys | pay-per-minute |
-| Python 3.10+ | system | free |
-| Hermes Agent (optional, but recommended) | `pip install hermes-agent` | free / self-hosted |
+| Item | Notes |
+|------|-------|
+| Discord bot token | Create one in the Discord Developer Portal. |
+| Vapi private API key | Create one in the Vapi dashboard. |
+| Python 3.10+ | Required by the plugin and installer. |
+| Hermes Agent | Recommended host environment for plugin registration and Discord commands. |
 
-Discord bot must have these intents enabled: **Server Members**, **Message Content**, and **Voice States** under the Bot tab. Invite URL needs `bot` scope + `connect`, `speak`, `use_voice_activity` permissions.
+The Discord bot needs the intents and permissions required for your server configuration, including Voice States and permission to connect and speak in the target channel.
 
-Vapi costs: outbound voice minutes + LLM tokens + TTS characters. Use `gpt-4o-mini` as the model to keep the per-minute cost low; switch to `gpt-4o` or `claude-3-5-sonnet` for higher quality.
+Vapi model, voice, and pricing availability change over time. Check the Vapi dashboard before deployment instead of relying on hard-coded model or price lists.
 
----
+## Usage
 
-## 🎯 Usage
+### Discord slash command
 
-### Slash command (in Discord)
-
-```
+```text
 /voice-vapi
 ```
 
-The bot joins **your current voice channel** and starts the Vapi call.
+The bot joins the invoking user's current voice channel and starts the bridge.
 
-### Hermes chat
+### Hermes tools
 
-```
+```text
 voice_vapi guild_id=1234567890 channel_id=0987654321
+voice_vapi_status
+voice_vapi_say guild_id=1234567890 text="Reminder: standup in 5 minutes"
+voice_vapi_leave guild_id=1234567890
+voice_vapi_stop
 ```
+
+See [`docs/TOOLS.md`](docs/TOOLS.md) for the complete tool reference.
 
 ### Health check
 
@@ -78,136 +79,124 @@ voice_vapi guild_id=1234567890 channel_id=0987654321
 curl -s http://127.0.0.1:18944/health | python3 -m json.tool
 ```
 
-### Send text into the active call
-
-```bash
-voice_vapi_say guild_id=1234567890 text="Reminder: standup in 5 minutes"
-```
-
-### Leave the channel
-
-```
-/voice-vapi-leave
-# or
-voice_vapi_leave guild_id=1234567890
-```
-
----
-
-## 🏗️ Architecture
+## Architecture
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full breakdown.
 
-```
+```text
 ┌─────────────────┐                    ┌──────────────────────┐
-│  Discord Voice  │  ◄──Opus 48kHz──►  │   LiveAudioSource    │
-│  (UDP + NaCl)   │                    │   (thread-safe queue)│
+│ Discord Voice   │  ◄──PCM 48 kHz──► │ LiveAudioSource      │
+│ UDP + voice recv│                    │ thread-safe queue    │
 └────────┬────────┘                    └──────────┬───────────┘
          │                                        │
          ▼                                        ▼
 ┌─────────────────┐                    ┌──────────────────────┐
-│  VoiceListener  │  ──PCM 16kHz───►   │  VapiClient          │
-│  (rx thread)    │                    │  (WSS + JSON ctrl)   │
+│ VapiPCMSink     │  ──PCM 16 kHz───► │ VapiBridge           │
+│ decoded receive │                    │ WSS + JSON control   │
 └─────────────────┘                    └──────────┬───────────┘
-                                                    │
-                                                    ▼
-                                         ┌──────────────────────┐
-                                         │   Vapi.ai            │
-                                         │  (STT → LLM → TTS    │
-                                         │   + tool calls)      │
-                                         └──────────────────────┘
+                                                  │
+                                                  ▼
+                                       ┌──────────────────────┐
+                                       │ Vapi                 │
+                                       │ STT / model / TTS    │
+                                       └──────────────────────┘
 ```
 
-The bridge is **in-process** — it lives inside the Hermes gateway's asyncio loop. No external services to run.
+The bridge runs in process with the Hermes gateway asyncio loop. It does not require a separate bridge daemon.
 
----
+## Configuration
 
-## 🔧 Configuration
+All settings normally live in `~/.hermes/.env`.
 
-All config goes in `~/.hermes/.env`:
+### Required
 
 ```env
-# Required
 DISCORD_BOT_TOKEN=...
 VAPI_API_KEY=...
-
-# Optional — Vapi assistant
-VAPI_ASSISTANT_ID=               # leave blank to auto-provision
-VAPI_VOICE=                       # e.g. jennifer, ryan, deepbrian
-VAPI_MODEL=gpt-4o-mini            # any Vapi-supported LLM
-VAPI_FIRST_MESSAGE=               # what Vapi says on join
-
-# Optional — networking
-DISCORD_VAPI_PORT=18944           # localhost HTTP control
-
-# Optional — auto-leave
-DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=900
-
-# Optional — provider override (only if you set VAPI_MODEL=gemini-...)
-GEMINI_API_KEY=...
 ```
 
-Get your Vapi keys at: https://dashboard.vapi.ai
+### Recommended: saved Vapi assistant
 
----
+```env
+VAPI_ASSISTANT_ID=...
+```
 
-## 🎙️ Voice + model choices
+A saved assistant supplies its configured provider, model, voice, tools, transcriber, first message, and fallbacks.
 
-The installer accepts a `VAPI_VOICE` and `VAPI_MODEL`. Common picks:
+### Inline transient assistant
 
-| Voice | Provider | Notes |
-|-------|----------|-------|
-| `jennifer` | 11labs | warm, female, default |
-| `ryan` | 11labs | calm, male |
-| `deepbrian` | deepgram | lower latency |
-| `alloy` / `echo` / `shimmer` | OpenAI | if you use OpenAI TTS |
+Used only when `VAPI_ASSISTANT_ID` is empty:
 
-| Model | Use case | Cost |
-|-------|----------|------|
-| `gpt-4o-mini` | default, fast, cheap | $ |
-| `gpt-4o` | higher quality, more context | $$ |
-| `claude-3-5-sonnet` | longer reasoning, coding | $$$ |
-| `gemini-1.5-pro` | long context window | $$ |
+```env
+VAPI_MODEL_NAME=gpt-4o-mini
+VAPI_SYSTEM_PROMPT=You are a helpful AI assistant.
+VAPI_VOICE_PROVIDER=11labs
+VAPI_VOICE_ID=cjVigY5qzO86Huf0OWal
+```
 
----
+`VAPI_MODEL` remains a legacy alias for `VAPI_MODEL_NAME`. The current inline assistant path hard-codes the provider to OpenAI; use a saved Vapi assistant for other providers.
 
-## 💸 Cost notes
+### Networking and idle behavior
 
-Vapi charges per minute **on top of** the underlying LLM and TTS costs. With `gpt-4o-mini` + 11labs `jennifer`, expect ~$0.10–$0.15 per minute of real conversation. Auto-leave on silence (default 15 min) caps idle time.
+```env
+DISCORD_VAPI_PORT=18944
+DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=900
+DISCORD_VAPI_AUTO_LEAVE_MIN_UPTIME_SECONDS=120
+DISCORD_VAPI_IDLE_PROMPT_SECONDS=120
+DISCORD_VAPI_IDLE_PROMPT_TEXT=Are you still there?
+```
 
----
+See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for every verified runtime setting and known ineffective legacy keys.
 
-## 📝 Call transcripts
+## Local control API safety
 
-Every call writes a JSONL transcript to `~/.hermes/voice-vapi-notes/voice-vapi-YYYYMMDD-HHMMSS.jsonl` containing:
+The HTTP listener binds to `127.0.0.1`. `/health` is read-only, while `/stop` and `/say?text=...` mutate an active bridge.
 
-- Per-turn events (user / assistant)
-- Tool call invocations
-- Hangup events
-- Final compiled transcript at the bottom
+The mutating routes are currently unauthenticated. Do not publish the port through a reverse proxy, public tunnel, container port mapping, or LAN bind. Authentication hardening is tracked in [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 
----
+## Assistant and model behavior
 
-## 🐛 Known bugs / quirks
+There are two supported configuration paths:
 
-> Full list in [`docs/KNOWN_BUGS.md`](docs/KNOWN_BUGS.md). Summary:
+1. **Saved assistant:** set `VAPI_ASSISTANT_ID`. This is the recommended path for production assistants, non-OpenAI providers, tools, custom first messages, and provider-specific voices.
+2. **Inline transient assistant:** leave `VAPI_ASSISTANT_ID` empty and configure the runtime model name, system prompt, voice provider, and voice ID directly.
 
-1. **Discord CDN handshake rejection** — `c-ams08.discord.media` rejects the first ~5 handshakes with code 4006. A single `channel.connect()` takes ~27 s of internal retries. **Do not restart the gateway repeatedly** — each restart resets the retry clock.
-2. **Stale rejoin fix** — if a guild entry remains in `_active_bridges` but `vc.is_connected()` returns False, a new `/voice-vapi` hangs with "Bridge still starting". The plugin detects this and starts fresh instead of returning pending.
-3. **Coexistence with gemini-live-discord-bridge** — each plugin uses its own autostart file (`voice-live-autostart.json` vs `voice-vapi-autostart.json`) and force-disconnects the other plugin's voice client before starting. Don't run both at once in the same channel.
-4. **Module import path** — the installed plugin directory is `discord-vapi`; because the name contains a hyphen, do not use it in a normal Python `import` statement. Hermes loads it from the plugin directory.
+Use exact provider-specific voice IDs from Vapi. Human-readable labels such as `jennifer` are not guaranteed to be valid runtime IDs.
 
----
+## Cost controls
 
-## 🛠️ Development
+Vapi usage and its underlying model, transcription, and voice providers may all contribute to cost. Pricing changes independently of this repository.
+
+Use a saved assistant with explicit provider choices, set an idle timeout, and verify current pricing in the Vapi dashboard before leaving the bridge unattended.
+
+## Transcripts and post-call summaries
+
+The repository includes `voice_vapi_summary` and `scripts/post_call_summary.py`, which can process compatible JSONL transcript files.
+
+**Current limitation:** normal calls do not persist those transcript files in this revision. Summary requests therefore require a manually supplied compatible file until [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2) is resolved.
+
+Treat any transcript files as sensitive and keep them outside version control with restrictive permissions.
+
+## Known limitations
+
+See [`docs/KNOWN_BUGS.md`](docs/KNOWN_BUGS.md). Important current boundaries include:
+
+1. Discord voice connection retries may make startup appear stalled on some endpoints.
+2. Only one Discord voice bridge should control a guild voice client at a time.
+3. Installer model/voice prompts do not yet map cleanly to the runtime configuration contract.
+4. JSONL transcript persistence and Vapi function-call dispatch are not implemented in the current bridge path.
+5. The localhost `/stop` and `/say` routes do not yet require authentication.
+6. The installed plugin directory is `discord-vapi`; the hyphen means it cannot be imported with a normal Python `import discord-vapi` statement. Hermes loads it by path.
+
+## Development
 
 ```bash
 git clone https://github.com/Capslockb/vapi-discord-bridge.git
 cd vapi-discord-bridge
 pip install -r plugin/requirements.txt
 
-# Symlink install (good for development)
-python3 installer/install.py   # pick "symlink" mode
+# Symlink install for development
+python3 installer/install.py
 
 # Compile check after editing
 python3 -m py_compile plugin/bridge.py plugin/__init__.py
@@ -215,45 +204,38 @@ python3 -m py_compile plugin/bridge.py plugin/__init__.py
 
 ### Project layout
 
-```
+```text
 vapi-discord-bridge/
 ├── README.md
 ├── LICENSE
-├── plugin/                    # the actual Hermes plugin
-│   ├── __init__.py            #   tool registration + slash commands
-│   ├── bridge.py              #   core audio pipeline + Vapi WSS client
-│   ├── plugin.yaml            #   Hermes plugin metadata
+├── CHANGELOG.md
+├── plugin/
+│   ├── __init__.py
+│   ├── bridge.py
+│   ├── plugin.yaml
 │   └── requirements.txt
 ├── installer/
-│   └── install.py             # oneshot TUI installer
+│   └── install.py
 ├── scripts/
-│   └── post_call_summary.py   # extract tasks/decisions from .jsonl
+│   └── post_call_summary.py
 ├── docs/
-│   ├── ARCHITECTURE.md        # deep dive on the audio pipeline
-│   ├── CONFIGURATION.md       # every env var explained
-│   ├── KNOWN_BUGS.md          # full bug list with repro steps
+│   ├── README.md
+│   ├── TOOLS.md
+│   ├── ARCHITECTURE.md
+│   ├── CONFIGURATION.md
+│   ├── KNOWN_BUGS.md
 │   └── diagrams/
-│       ├── dataflow.txt       # ASCII dataflow diagram
-│       ├── audio-pipeline.txt
-│       ├── vapi-wss-protocol.txt
-│       └── lifecycle.txt
 └── .github/
     └── workflows/
         └── lint.yml
 ```
 
----
+## License
 
-## 📜 License
+MIT. See [`LICENSE`](LICENSE).
 
-MIT.
+## Credits
 
----
-
-## 🙏 Credits
-
-- Discord voice protocol — [`discord.py`](https://github.com/Rapptz/discord.py) + [`discord-ext-voice-recv`](https://github.com/imayhaveborkedit/discord-ext-voice-recv).
-- Opus decoding — bundled with `discord.py`.
-- Vapi.ai — [vapi.ai](https://vapi.ai).
-- Hermes Agent — [Nous Research](https://nousresearch.com).
-- Built and battle-tested at [capslock.nl](https://capslock.nl).
+- Discord voice protocol: [`discord.py`](https://github.com/Rapptz/discord.py) and [`discord-ext-voice-recv`](https://github.com/imayhaveborkedit/discord-ext-voice-recv).
+- Vapi: [vapi.ai](https://vapi.ai).
+- Hermes Agent: [Nous Research](https://nousresearch.com).
