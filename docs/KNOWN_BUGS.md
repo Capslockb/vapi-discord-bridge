@@ -68,7 +68,7 @@ The next `voice_vapi()` start normally detects the disconnected voice client and
 
 **Best practice:** select one active bridge per guild and avoid enabling competing autostart configurations simultaneously.
 
-## Autostart
+## Autostart and command inference
 
 ### 8. Autostart file lifecycle
 
@@ -80,9 +80,15 @@ If startup never succeeds, the file remains available for the retry window and c
 rm -f ~/.hermes/voice-vapi-autostart.json
 ```
 
-### 9. Repository-specific default user ID
+### 9. Slash commands use a fixed configured user
 
-The plugin contains a default `DISCORD_VAPI_USER_ID`. Set your own deployment value explicitly instead of relying on the repository default when autostart infers a voice channel from a user.
+The plugin contains a repository-specific default `DISCORD_VAPI_USER_ID`. The current `/voice-vapi` and `/voice-vapi-leave` wrappers use that fixed configured user to infer a voice channel or guild; they do not use the Discord member who invoked the command.
+
+**Symptom:** a command can target another user's channel, select the wrong guild, or report no active voice session even though the invoker is connected.
+
+**Workaround:** set `DISCORD_VAPI_USER_ID` explicitly to the account whose voice state should be followed. Do not assume slash commands are invoker-aware.
+
+**Tracking:** [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8).
 
 ## Configuration and tuning
 
