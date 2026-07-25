@@ -195,7 +195,7 @@ Every call writes a JSONL transcript to `~/.hermes/voice-vapi-notes/voice-vapi-Y
 1. **Discord CDN handshake rejection** — `c-ams08.discord.media` rejects the first ~5 handshakes with code 4006. A single `channel.connect()` takes ~27 s of internal retries. **Do not restart the gateway repeatedly** — each restart resets the retry clock.
 2. **Stale rejoin fix** — if a guild entry remains in `_active_bridges` but `vc.is_connected()` returns False, a new `/voice-vapi` hangs with "Bridge still starting". The plugin detects this and starts fresh instead of returning pending.
 3. **Coexistence with gemini-live-discord-bridge** — each plugin uses its own autostart file (`voice-live-autostart.json` vs `voice-vapi-autostart.json`) and force-disconnects the other plugin's voice client before starting. Don't run both at once in the same channel.
-4. **Module import path** — the plugin dir is `discord-vapi` (Python-safe already, no dash to normalize).
+4. **Module import path** — the installed plugin directory is `discord-vapi`; because the name contains a hyphen, do not use it in a normal Python `import` statement. Hermes loads it from the plugin directory.
 
 ---
 
