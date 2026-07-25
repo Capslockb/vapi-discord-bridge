@@ -1,34 +1,100 @@
                        ╔════════════════════════════════════════════╗
                        ║        vapi-discord-bridge                ║
-                       ║            Dataflow overview              ║
+                       ║      source-verified dataflow             ║
                        ╚════════════════════════════════════════════╝
 
-  ┌──────────────────┐         ┌──────────────────────┐
-  │   USER SPEAKS    │         │   VAPI REPLIES        │
-  │   (microphone)   │         │   (TTS audio)         │
-  └────────┬─────────┘         └──────────┬───────────┘
-           │                              ▲
-           │ Opus (48 kHz stereo)         │ PCM (24 kHz mono)
-           ▼                              │
-  ┌──────────────────┐         ┌──────────┴───────────┐
-  │  Discord Voice   │  WSS    │    VapiClient        │
-  │  (UDP + NaCl)    │◄───────►│  (asyncio task)      │
-  └──────────────────┘         └──────────┬───────────┘
-                                          │ tool calls
-                                          ▼
-                               ┌──────────────────────┐
-                               │  Function dispatcher  │
-                               │  (in-process)         │
-                               └──────────────────────┘
-                                          │
-                                          ▼
-                               ┌──────────────────────┐
-                               │  ~/.hermes/voice-     │
-                               │  vapi-notes/*.jsonl   │
-                               │  (transcript)         │
-                               └──────────────────────┘
+  DISCORD → VAPI
+  ──────────────
+
+  ┌──────────────────┐
+  │ Discord user     │
+  │ microphone       │
+  └────────┬─────────┘
+           │ encrypted Discord voice packets
+           ▼
+  ┌──────────────────┐
+  │ VoiceRecvClient  │  decrypts and decodes voice
+  └────────┬─────────┘
+           │ PCM16, 48 kHz stereo, 20 ms frames
+           ▼
+  ┌──────────────────┐
+  │ VapiPCMSink      │  ignores bots/empty frames and resamples
+  └────────┬─────────┘
+           │ PCM16, 16 kHz mono
+           ▼
+  ┌──────────────────┐
+  │ bounded send     │  drops the oldest item when full
+  │ queue            │
+  └────────┬─────────┘
+           │ raw binary PCM over WebSocket
+           ▼
+  ┌──────────────────┐
+  │ Vapi WebSocket   │
+  │ transport        │
+  └──────────────────┘
 
 
-  HOT PATH (audio):       VoiceListener ─► Vapi WSS ─► LiveAudioSource
-  COLD PATH (control):    HTTP /health, /say, /leave on 127.0.0.1:18944
-  OBSERVABILITY:          bridge.py → BRIDGE.health() → JSON dict
+  VAPI → DISCORD
+  ──────────────
+
+  ┌──────────────────┐
+  │ Vapi WebSocket   │
+  │ transport        │
+  └────────┬─────────┘
+           │ raw binary PCM16, treated as 16 kHz mono
+           ▼
+  ┌──────────────────┐
+  │ VapiBridge       │  optional preroll, fade-in, interruption clear
+  └────────┬─────────┘
+           │ PCM16, 16 kHz mono
+           ▼
+  ┌──────────────────┐
+  │ LiveAudioSource  │  buffers and resamples
+  └────────┬─────────┘
+           │ PCM16, 48 kHz stereo, fixed 20 ms frames
+           ▼
+  ┌──────────────────┐
+  │ Discord voice    │  encodes and transmits playback
+  │ playback         │
+  └──────────────────┘
+
+
+  CONTROL AND STATUS
+  ──────────────────
+
+  Vapi string JSON messages currently handled:
+
+    assistant-started  ─► log assistant name
+    conversation-update ─► clear buffered output on interrupted/ended
+    transcript          ─► request stop only when text contains "disconnect"
+    other JSON           ─► debug log only
+
+  Text injection to Vapi:
+
+    voice_vapi_say / HTTP /say / idle prompt
+      ─► {"type":"text","text":"..."}
+
+  Loopback HTTP listener on 127.0.0.1:18944 by default:
+
+    /health  read-only status
+    /stop    mutates bridge state; currently unauthenticated
+    /say     injects text; currently unauthenticated
+
+  Do not expose the listener through a public tunnel, reverse proxy, LAN bind,
+  or container port mapping. Authentication work is tracked in Issue #3.
+
+
+  CURRENTLY ABSENT
+  ────────────────
+
+    - no transcript JSONL writer in the live bridge;
+    - no Vapi function/tool-call dispatcher;
+    - no function-call-result path;
+    - no HTTP /leave route.
+
+  scripts/post_call_summary.py reads an already existing compatible JSONL file;
+  the bridge does not create that file in the current revision. Capability work
+  is tracked in Issue #2.
+
+  Some stop paths disconnect audio but leave the sidecar task/listener and a
+  stale registry entry alive. Lifecycle cleanup is tracked in Issue #4.
