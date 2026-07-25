@@ -24,7 +24,7 @@ Stop the bridge for one guild.
 voice_vapi_leave guild_id=1234567890
 ```
 
-`guild_id` is required.
+`guild_id` is required. This is the recommended normal shutdown path because it removes the guild registry entry and cancels the owning sidecar task before disconnecting the Discord voice client.
 
 ## `voice_vapi_status`
 
@@ -57,6 +57,8 @@ Omit `guild_id` to stop all active bridges:
 ```text
 voice_vapi_stop
 ```
+
+> Current limitation: this tool calls the bridge media stop routine but does not consistently terminate the owning sidecar task, close the loopback listener, or remove the registry entry immediately. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
 
 ## `voice_vapi_summary`
 
