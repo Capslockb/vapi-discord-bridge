@@ -106,7 +106,15 @@ Use the exact provider and voice ID from Vapi, or configure them on a saved Vapi
 - `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` appears in health output but is not used as a separate watchdog threshold.
 - `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` is defined but should not be relied on until its runtime use is verified.
 
-### 12. Module import path
+### 12. Zero does not currently disable quiet auto-leave
+
+`DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=0` is intended to disable the quiet-timeout stop, and the helper method contains that guard. However, the watchdog performs an earlier unconditional `idle >= AUTO_LEAVE_QUIET_SECONDS` comparison. With a value of `0`, the bridge can therefore stop as soon as the minimum-uptime gate is reached.
+
+**Workaround:** do not rely on `0` as a disable value in the current runtime. A deliberately large positive value can postpone the stop, but it is not a safety control and unattended calls may continue incurring provider costs.
+
+**Tracking:** [Issue #11](https://github.com/Capslockb/vapi-discord-bridge/issues/11).
+
+### 13. Module import path
 
 The installed plugin directory is named `discord-vapi`. A hyphen is not valid in a normal Python import identifier, so this is invalid:
 
@@ -118,11 +126,11 @@ Hermes loads the plugin from its filesystem path. Custom Python code should not 
 
 ## Cost and privacy
 
-### 13. Idle calls may continue consuming paid services
+### 14. Idle calls may continue consuming paid services
 
-An open Vapi call can continue incurring charges even when conversation is quiet. Configure `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS`, verify current provider pricing, and monitor unattended sessions.
+An open Vapi call can continue incurring charges even when conversation is quiet. Configure a tested positive `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` value, verify current provider pricing, and monitor unattended sessions. Until Issue #11 is resolved, do not use `0` as a disable value and assume the documented behavior is reliable.
 
-### 14. Transcript inputs are sensitive
+### 15. Transcript inputs are sensitive
 
 Although the current bridge does not persist transcripts itself, any JSONL files supplied to the summary tool may contain private voice content, tool arguments, and identifiers. Store them with restrictive permissions and do not commit them.
 
