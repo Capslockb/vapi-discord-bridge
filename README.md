@@ -28,11 +28,13 @@ The installer performs:
 | 5 | Merge selected values into `~/.hermes/.env` with mode `0600`. |
 | 6 | Optional autostart-file creation. |
 
-For non-interactive installation:
+For a pre-seeded unattended repeat install:
 
 ```bash
 python3 installer/install.py --yes
 ```
+
+`--yes` does not provide required credentials. It currently succeeds only when `DISCORD_BOT_TOKEN` and `VAPI_API_KEY` already exist in `~/.hermes/.env`; on a clean environment it exits during key collection. It also selects copy mode and default confirmation answers automatically. In particular, a failed Discord or Vapi network check is accepted through the default “continue anyway” response, so this mode is not a strict credential-validation gate. Deterministic fail-closed unattended installation is tracked in [Issue #10](https://github.com/Capslockb/vapi-discord-bridge/issues/10).
 
 ### Configuration warning
 
