@@ -68,11 +68,13 @@ The mutating routes are currently unauthenticated. `/say` also places the inject
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` | `900` | Stop after this many seconds without recorded user activity. `0` disables this threshold. |
+| `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` | `900` | Stop after this many seconds without recorded user activity. The intended disable value is `0`, but the current watchdog still stops after minimum uptime because one decision path lacks the disable guard. See Issue #11. |
 | `DISCORD_VAPI_AUTO_LEAVE_MIN_UPTIME_SECONDS` | `120` | Minimum bridge uptime before idle prompting or auto-leave may fire. |
 | `DISCORD_VAPI_IDLE_PROMPT_SECONDS` | `120` | Send the idle prompt after this many quiet seconds. `0` disables the prompt. |
 | `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` | `60` | Reported in health output; the current watchdog does not use it as a separate shutdown threshold. |
 | `DISCORD_VAPI_IDLE_PROMPT_TEXT` | `Are you still there?` | Text sent through Vapi when the idle prompt fires. |
+
+Until [Issue #11](https://github.com/Capslockb/vapi-discord-bridge/issues/11) is fixed and tested, do not rely on `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=0` to keep a bridge open. A deliberately large positive value is only a temporary workaround; unattended calls can continue incurring provider costs.
 
 ## Playback tuning
 
