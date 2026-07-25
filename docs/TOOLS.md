@@ -74,6 +74,8 @@ Generate a report from an existing compatible JSONL transcript.
 
 > Current limitation: the active bridge does not create transcript files after a normal call. Supply a compatible file manually until [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2) is resolved.
 
+> Path and privacy boundary: the current tool accepts caller-supplied `file` and `notes_dir` paths and does not confine them to the default transcript directory. A trusted caller can request another gateway-readable transcript-shaped JSONL file. Restrict this tool to trusted operators and use only known files under `~/.hermes/voice-vapi-notes/` until [Issue #9](https://github.com/Capslockb/vapi-discord-bridge/issues/9) is resolved.
+
 Use the newest compatible file in the default directory:
 
 ```text
