@@ -19,7 +19,7 @@ The [`diagrams/`](diagrams/) directory contains text diagrams for the data flow,
 - The inline transient-assistant path currently uses an OpenAI provider with runtime keys documented in [`CONFIGURATION.md`](CONFIGURATION.md).
 - Normal calls do not currently create the JSONL files required by `voice_vapi_summary`; see [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
 - Vapi function-call dispatch is not implemented in the active WebSocket receive path.
-- The localhost `/stop` and `/say` routes are unauthenticated; see [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+- The localhost `/stop` and `/say` routes are unauthenticated, and `/say` places injected speech text in the request URL and echoes it in the response. Keep the listener loopback-only and unproxied; see [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 - The HTTP `/stop` route and `voice_vapi_stop` do not reliably terminate the owning sidecar task, loopback listener, and registry entry. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
 
 ## Safety notes
