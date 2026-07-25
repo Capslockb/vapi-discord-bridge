@@ -50,7 +50,7 @@ rm -f ~/.hermes/voice-vapi-autostart.json
 
 ### 6. Module import path
 
-The plugin directory is `discord-vapi` (already Python-safe, no dash to normalize). If you're importing it manually, use `discord_vapi`.
+The installed plugin directory is named `discord-vapi`. Because the name contains a hyphen, it is not a valid identifier in a normal Python `import` statement. Hermes loads the plugin from its directory; avoid trying to import `discord-vapi` directly in custom Python code.
 
 ### 7. Function-calling handlers must be non-blocking
 
