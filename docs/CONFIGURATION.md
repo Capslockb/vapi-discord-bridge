@@ -1,8 +1,8 @@
 # Configuration
 
-> Every env var the vapi-discord-bridge understands.
+> Runtime configuration verified against `plugin/bridge.py` and `plugin/__init__.py`.
 
-All settings live in `~/.hermes/.env` (chmod 600). The installer writes/merges them automatically. After changing anything, restart the gateway:
+All settings live in `~/.hermes/.env` unless you inject them through another process environment. Keep the file mode at `0600`. After changing runtime settings, restart the gateway:
 
 ```bash
 systemctl --user restart hermes-gateway
@@ -10,54 +10,98 @@ systemctl --user restart hermes-gateway
 
 ## Required
 
-| Key | Type | Example | Notes |
-|-----|------|---------|-------|
-| `DISCORD_BOT_TOKEN` | secret | `MTI0...X.Vw.A...` | Bot token from Discord Developer Portal. Voice States intent must be enabled. |
-| `VAPI_API_KEY` | secret | `sk-...` (≥20 chars) | Vapi **private** key from [dashboard.vapi.ai](https://dashboard.vapi.ai) → Account Settings → API Keys. |
+| Key | Default | Notes |
+|-----|---------|-------|
+| `DISCORD_BOT_TOKEN` | _(required)_ | Discord bot token. Voice States and Message Content must be enabled for the intended workflow. |
+| `VAPI_API_KEY` | _(required)_ | Vapi private API key used for `POST /call`. |
 
-## Vapi assistant & model
+## Assistant selection
+
+### Recommended: saved Vapi assistant
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `VAPI_ASSISTANT_ID` | _(auto)_ | A preconfigured Vapi assistant ID. If blank, the bridge auto-provisions a minimal one on first run. |
-| `VAPI_VOICE` | _(Vapi default)_ | Voice ID — see [vapi voices](https://docs.vapi.ai/voices). E.g. `jennifer`, `ryan`, `alloy`, `echo`. |
-| `VAPI_MODEL` | `gpt-4o-mini` | Any Vapi-supported LLM: `gpt-4o`, `gpt-4o-mini`, `claude-3-5-sonnet`, `gemini-1.5-pro`, `llama-3.1-70b`. |
-| `VAPI_FIRST_MESSAGE` | _(Vapi default)_ | Text the assistant says when joining the call. |
+| `VAPI_ASSISTANT_ID` | _(empty)_ | When set, the transient call references this saved assistant and inherits its model, provider, voice, tools, transcriber, first message, and fallbacks. |
 
-## Provider overrides
+Using a saved assistant is the only currently documented path for non-OpenAI model providers and complex Vapi configuration.
 
-| Key | Default | Notes |
-|-----|---------|-------|
-| `GEMINI_API_KEY` | _(empty)_ | Only required if you set `VAPI_MODEL=gemini-...`. Vapi will use it as the LLM provider. |
-| `VAPI_PUBLIC_KEY` | _(empty)_ | Public Web SDK key. Optional for headless server use; only needed if you also embed a Vapi widget. |
+### Inline transient assistant
 
-## Networking
+These settings are used only when `VAPI_ASSISTANT_ID` is empty:
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `DISCORD_VAPI_PORT` | `18944` | Localhost HTTP control port. Bind stays on `127.0.0.1`. |
+| `VAPI_MODEL_NAME` | `gpt-4o-mini` | Model name sent to Vapi. `VAPI_MODEL` is accepted as a legacy alias. The current runtime hard-codes the model provider to `openai`. |
+| `VAPI_SYSTEM_PROMPT` | `You are a helpful AI assistant.` | System message for the inline transient assistant. |
+| `VAPI_VOICE_PROVIDER` | `11labs` | Vapi voice provider identifier. |
+| `VAPI_VOICE_ID` | `cjVigY5qzO86Huf0OWal` | Provider-specific voice ID. Use the exact ID shown by Vapi; display names are not interchangeable with IDs. |
 
-## Auto-leave
+## Installer/runtime mismatch
+
+The current installer still collects several keys that the runtime does not consume:
+
+- `VAPI_VOICE`
+- `VAPI_FIRST_MESSAGE`
+- `GEMINI_API_KEY`
+
+`VAPI_PUBLIC_KEY` is also not used by this headless bridge; it is relevant only to separate client-side Vapi embeds.
+
+Until [Issue #1](https://github.com/Capslockb/vapi-discord-bridge/issues/1) is fixed, configure `VAPI_VOICE_PROVIDER`, `VAPI_VOICE_ID`, `VAPI_MODEL_NAME`, and `VAPI_SYSTEM_PROMPT` manually, or use `VAPI_ASSISTANT_ID`.
+
+## Networking and control API
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` | `900` | Hang up after this many seconds of silence. `0` disables auto-leave. |
-| `DISCORD_VAPI_AUTO_LEAVE_MIN_UPTIME_SECONDS` | `120` | Don't auto-leave during the first N seconds. Prevents hangs on long connects. |
-| `DISCORD_VAPI_LEAVE_PHRASES` | `goodbye,bye,hang up,end call,stop voice,thanks bye` | Comma-separated. If the assistant outputs any of these, the bridge leaves immediately. |
+| `DISCORD_VAPI_PORT` | `18944` | HTTP control listener. The runtime binds to `127.0.0.1` only. |
 
-## Notes / transcripts
+Current routes:
+
+- `GET /health` — read bridge status.
+- `/stop` — stop the active bridge.
+- `/say?text=...` — inject text into the active Vapi call.
+
+The mutating routes are currently unauthenticated. Keep the listener loopback-only and do not expose it through a reverse proxy or public tunnel. Hardening is tracked in [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+
+## Auto-leave and idle prompt
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `NOTES_DIR` | `~/.hermes/voice-vapi-notes/` | Where the JSONL transcript is written. Created on first call if missing. |
+| `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` | `900` | Stop after this many seconds without recorded user activity. `0` disables this threshold. |
+| `DISCORD_VAPI_AUTO_LEAVE_MIN_UPTIME_SECONDS` | `120` | Minimum bridge uptime before idle prompting or auto-leave may fire. |
+| `DISCORD_VAPI_IDLE_PROMPT_SECONDS` | `120` | Send the idle prompt after this many quiet seconds. `0` disables the prompt. |
+| `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` | `60` | Reported in health output; the current watchdog does not use it as a separate shutdown threshold. |
+| `DISCORD_VAPI_IDLE_PROMPT_TEXT` | `Are you still there?` | Text sent through Vapi when the idle prompt fires. |
+
+## Playback tuning
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `DISCORD_VAPI_OUTPUT_PREROLL_MS` | `320` | Silence inserted before a new output turn. |
+| `DISCORD_VAPI_OUTPUT_FADE_IN_MS` | `0` | Fade-in applied to the first output chunk. |
+| `DISCORD_VAPI_OUTPUT_READ_WAIT_SECONDS` | `0.005` | Queue wait before returning a silence frame to Discord playback. |
+| `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` | `240` | Defined by the runtime; verify behavior before relying on it for tuning. |
+| `DISCORD_VAPI_CLEAR_ON_INTERRUPT` | `true` | Clear queued playback when Vapi reports an interrupted or ended conversation update. |
+
+`DISCORD_VAPI_KEEPALIVE_SECONDS` is currently read but the active keepalive loop sends silence every 20 ms instead of using the configured interval. Treat it as ineffective until the runtime is corrected.
 
 ## Autostart
 
-Trigger the bridge to auto-join on gateway boot by writing a small JSON file:
+The plugin can start from either an autostart file or environment defaults.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `DISCORD_VAPI_AUTOSTART` | _(false)_ | Set to `1`, `true`, or `yes` to schedule autostart without requiring the file. |
+| `DISCORD_VAPI_AUTOSTART_FILE` | `~/.hermes/voice-vapi-autostart.json` | Override the autostart JSON path. |
+| `DISCORD_VAPI_KEEP_AUTOSTART_FILE` | `0` | When false, a successful autostart deletes the JSON file. |
+| `DISCORD_VAPI_GUILD_ID` | _(empty)_ | Fallback guild ID when not present in the JSON file. |
+| `DISCORD_VAPI_CHANNEL_ID` | _(empty)_ | Fallback voice channel ID. |
+| `DISCORD_VAPI_USER_ID` | repository-specific default | User whose current voice channel is inferred when guild/channel are absent. Set this explicitly for your deployment. |
+
+Example:
 
 ```bash
 mkdir -p ~/.hermes
-cat > ~/.hermes/voice-vapi-autostart.json <<EOF
+cat > ~/.hermes/voice-vapi-autostart.json <<'EOF'
 {
   "guild_id": "123456789012345678",
   "channel_id": "123456789012345678",
@@ -67,11 +111,10 @@ EOF
 chmod 600 ~/.hermes/voice-vapi-autostart.json
 ```
 
-The file is **deleted on successful start** — recreate it to re-trigger. The Gemini plugin uses a different file (`voice-live-autostart.json`) and won't conflict.
+The file is deleted after a successful start unless `DISCORD_VAPI_KEEP_AUTOSTART_FILE=1`.
 
-## Tuning tips
+## Transcripts and summaries
 
-- **Lower cost** — set `VAPI_MODEL=gpt-4o-mini`, `VAPI_VOICE=deepbrian` (Deepgram TTS, faster & cheaper than 11labs).
-- **Higher quality** — `VAPI_MODEL=claude-3-5-sonnet`, `VAPI_VOICE=jennifer`. Pays roughly 4× the per-minute cost.
-- **Add tool calls** — configure a Vapi assistant with a `serverUrl` in the dashboard. Vapi POSTs to it; the bridge receives the result and resumes the call.
-- **Multiple bots** — bind each gateway instance to a different `DISCORD_VAPI_PORT` (e.g. 18944, 18954, 18964) and run them under separate Hermes profiles.
+The current bridge does not persist call transcripts. `voice_vapi_summary` can read compatible JSONL files if they already exist, but normal calls do not create them in this revision. This gap is tracked in [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
+
+Treat any manually supplied transcript files as sensitive and store them with restrictive permissions.
