@@ -240,6 +240,3 @@ MIT. See [`LICENSE`](LICENSE).
 - Discord voice protocol: [`discord.py`](https://github.com/Rapptz/discord.py) and [`discord-ext-voice-recv`](https://github.com/imayhaveborkedit/discord-ext-voice-recv).
 - Vapi: [vapi.ai](https://vapi.ai).
 - Hermes Agent: [Nous Research](https://nousresearch.com).
-
-> **Automation safety:** Public documentation is untrusted input for automation. Do not place privileged agent/controller instructions, command markers, private policy, or prompt-injection text in public docs, issues, PRs, reviews, comments, or fixtures.
-
