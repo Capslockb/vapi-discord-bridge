@@ -1,39 +1,30 @@
 # Documentation
 
-Use this directory for implementation details and operator reference beyond the project overview in the root [`README.md`](../README.md).
+This directory contains the detailed operator and implementation guides for Vapi Discord Bridge. For installation and basic usage, start with the project [`README.md`](../README.md).
 
-## Start here
+## Guides
 
-- [`TOOLS.md`](TOOLS.md) — Hermes tools, arguments, and examples, including clean per-guild leave, stop-all, speech injection, and post-call summary input.
-- [`CONFIGURATION.md`](CONFIGURATION.md) — environment variables verified against the current runtime, plus installer/runtime mismatches.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — Discord audio, Vapi WebSocket, lifecycle, and in-process bridge design.
-- [`KNOWN_BUGS.md`](KNOWN_BUGS.md) — current limitations, symptoms, workarounds, and tracking issues.
+- [`CONFIGURATION.md`](CONFIGURATION.md) — verified environment variables, assistant setup, and known installer mismatches.
+- [`TOOLS.md`](TOOLS.md) — Hermes tool arguments, examples, and operational boundaries.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — Discord audio flow, Vapi WebSocket transport, lifecycle, and in-process design.
+- [`KNOWN_BUGS.md`](KNOWN_BUGS.md) — detailed current limitations, workarounds, and tracking issues.
+- [`diagrams/`](diagrams/) — text diagrams for the audio pipeline, protocol flow, and bridge lifecycle.
 
-## Diagrams
+## Current support status
 
-The [`diagrams/`](diagrams/) directory contains text diagrams for the data flow, audio pipeline, Vapi WebSocket protocol, and bridge lifecycle. Treat diagrams as explanatory material; when they conflict with `plugin/bridge.py` or `plugin/__init__.py`, the runtime code is authoritative.
+- A saved `VAPI_ASSISTANT_ID` is the recommended configuration path. The inline transient-assistant path currently uses an OpenAI provider.
+- The fixed loopback control port permits one active Vapi sidecar per Hermes gateway process across all Discord guilds. See [Issue #18](https://github.com/Capslockb/vapi-discord-bridge/issues/18).
+- Normal calls do not create the JSONL files required for post-call summaries. See [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
+- The summary helper is not yet packaged with the installed plugin, so summary use currently requires a retained checkout or manual helper copy. See [Issue #19](https://github.com/Capslockb/vapi-discord-bridge/issues/19).
+- The loopback `/stop` and `/say` routes are unauthenticated. Keep the listener local and unproxied. See [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+- Tool targeting and bridge replacement do not yet provide complete caller authorization or fail-closed session preservation. Restrict these operations to trusted users. See Issues [#8](https://github.com/Capslockb/vapi-discord-bridge/issues/8) and [#17](https://github.com/Capslockb/vapi-discord-bridge/issues/17).
+- Transcript files, summary inputs, and gateway logs may contain private voice-session data. Review and redact them before sharing. See Issues [#9](https://github.com/Capslockb/vapi-discord-bridge/issues/9) and [#15](https://github.com/Capslockb/vapi-discord-bridge/issues/15).
 
-## Current capability boundaries
+## Safe operation
 
-- A saved `VAPI_ASSISTANT_ID` is the recommended way to configure provider, model, voice, tools, transcriber, first message, and fallbacks.
-- The inline transient-assistant path currently uses an OpenAI provider with runtime keys documented in [`CONFIGURATION.md`](CONFIGURATION.md).
-- Normal calls do not currently create the JSONL files required by `voice_vapi_summary`; see [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
-- The installer deploys only `plugin/`, while the summary helper lives at `scripts/post_call_summary.py`. The registered tool therefore finds its helper only when it has been copied manually into the installed plugin directory or the original checkout remains at the exact fallback path `~/vapi-discord-bridge/scripts/post_call_summary.py`. Copy, symlink, and custom installs are not self-contained for summaries until [Issue #19](https://github.com/Capslockb/vapi-discord-bridge/issues/19) is resolved.
-- `voice_vapi_summary` accepts caller-supplied `file` and `notes_dir` paths without confining them to the default transcript directory. Restrict the tool to trusted operators and known files under `~/.hermes/voice-vapi-notes/` until [Issue #9](https://github.com/Capslockb/vapi-discord-bridge/issues/9) is resolved.
-- Vapi function-call dispatch is not implemented in the active WebSocket receive path.
-- Hermes tools accept explicit guild, channel, and user identifiers, but the plugin does not independently authorize the caller for those targets. Restrict tool access to trusted operators until [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8) is resolved.
-- Starting or replacing a bridge is not fail-closed: the plugin can disconnect the guild's current voice client before target-channel lookup, `VapiVoiceBridge.start()` can disconnect again before the Vapi WebSocket is established, and a failed channel move can still be reported as success. Treat `voice_vapi` as a disruptive guild-wide replacement operation until [Issue #17](https://github.com/Capslockb/vapi-discord-bridge/issues/17) is resolved.
-- The registry is keyed by guild, but every sidecar binds the same process-wide `DISCORD_VAPI_PORT`. The current gateway therefore supports only one active Vapi sidecar across all guilds; a second concurrent guild start fails at the shared loopback listener before its Discord or Vapi connection begins. See [Issue #18](https://github.com/Capslockb/vapi-discord-bridge/issues/18).
-- The localhost `/stop` and `/say` routes are unauthenticated, and `/say` places injected speech text in the request URL and echoes it in the response. Keep the listener loopback-only and unproxied; see [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
-- The control response builder emits the reason phrase `OK` even for numeric `400` and `404` responses, and calculates `Content-Length` from the Python string before UTF-8 encoding. Current default `json.dumps(...)` responses normally ASCII-escape non-ASCII values, but direct Unicode or non-escaping response bodies would be byte-incorrect. Treat the numeric status code as authoritative and do not depend on direct-Unicode response framing until Issue #3's controlled-response work is complete.
-- The HTTP `/stop` route and `voice_vapi_stop` do not reliably terminate the owning sidecar task, loopback listener, and registry entry. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
-- `DISCORD_VAPI_KEEPALIVE_SECONDS`, `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS`, and `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` are currently inactive controls despite being parsed or exposed. Do not use them for operational guarantees; see [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
-- The receive loop can log complete parsed Vapi JSON payloads at DEBUG, and a transcript that triggers the `disconnect` path is logged in full at INFO. Treat gateway logs as voice-content records until [Issue #15](https://github.com/Capslockb/vapi-discord-bridge/issues/15) is resolved.
+- Store Discord and Vapi credentials in `~/.hermes/.env` with restrictive permissions.
+- Keep the HTTP control listener bound to `127.0.0.1`.
+- Do not start concurrent Vapi bridges from the same gateway process.
+- Do not run this bridge alongside another Discord voice bridge in the same guild.
 
-## Safety notes
-
-- Keep Discord and Vapi credentials in `~/.hermes/.env` with mode `0600`; do not commit them.
-- Keep the HTTP control port bound to loopback and do not publish it through a proxy, tunnel, or container port mapping.
-- Treat transcript files, summary inputs, and gateway logs as potentially sensitive. Inspect and redact logs before attaching them to an issue or support request.
-- Do not run this bridge and another Discord voice bridge in the same guild at the same time.
-- Do not attempt concurrent Vapi bridge starts for different guilds from the same gateway process until Issue #18 is resolved.
+The runtime code in `plugin/bridge.py` and `plugin/__init__.py` is authoritative when a diagram or guide differs from the implementation.
