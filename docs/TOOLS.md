@@ -8,6 +8,12 @@ The plugin registers these tools without a per-caller authorization check. Calle
 
 Expose the tools only to trusted operators or enforce user, guild, and command authorization in the surrounding Hermes/Discord gateway. Do not treat Discord identifiers as secrets or access tokens. Invoker-aware and cross-guild authorization work is tracked in [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8).
 
+## Identifier validation boundary
+
+Supply Discord identifiers as positive decimal snowflake strings. The current handlers convert several `guild_id` and `channel_id` values with `int(...)` outside a controlled validation boundary. Empty, whitespace-only, non-decimal, zero, negative, boolean, or otherwise malformed values can therefore raise an exception instead of returning the normal JSON error object.
+
+Do not pass untrusted free-form text into identifier fields. Stable validation and controlled errors are tracked in [Issue #13](https://github.com/Capslockb/vapi-discord-bridge/issues/13). This validation work does not replace the authorization boundary above: a syntactically valid ID is still not proof of permission.
+
 ## `voice_vapi`
 
 Start a Vapi bridge for a Discord guild.
@@ -65,6 +71,8 @@ Omit `guild_id` to stop all active bridges:
 ```text
 voice_vapi_stop
 ```
+
+A malformed supplied `guild_id` is not the same as omission and may currently escape the normal error contract; see Issue #13.
 
 > Current limitation: this tool calls the bridge media stop routine but does not consistently terminate the owning sidecar task, close the loopback listener, or remove the registry entry immediately. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
 
