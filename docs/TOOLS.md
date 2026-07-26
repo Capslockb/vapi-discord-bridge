@@ -56,7 +56,9 @@ voice_vapi_say guild_id=1234567890 text="Reminder: standup in 5 minutes"
 
 Both `guild_id` and `text` are required.
 
-> Privacy limitation: the current handler returns the submitted text in its JSON result. Hermes may retain tool inputs and outputs in conversation history or logs, so do not use this tool for secrets or sensitive personal data. The matching loopback `/say` route also echoes speech text; response redaction is included in the hardening tracked by [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
+> Size and cost limitation: neither the Hermes tool nor the matching `/say` route currently applies a maximum text length before sending one complete WebSocket JSON message to Vapi. Large or untrusted values can create oversized provider requests, excessive speech generation, avoidable provider cost, and large tool traces. Until [Issue #16](https://github.com/Capslockb/vapi-discord-bridge/issues/16) is resolved, keep injected text short, operator-authored, and non-sensitive; do not map arbitrary documents, transcripts, or untrusted free-form input directly into this tool.
+
+> Privacy limitation: the current handler returns the submitted text in its JSON result. Hermes may retain tool inputs and outputs in conversation history or logs, so do not use this tool for secrets or sensitive personal data. The loopback `/say` route also echoes speech text. Shared length validation and response minimization are tracked in Issue #16, while query-string and HTTP authentication hardening remain tracked by [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 
 ## `voice_vapi_stop`
 
