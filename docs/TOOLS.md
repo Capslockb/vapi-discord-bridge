@@ -10,7 +10,7 @@ Expose the tools only to trusted operators or enforce user, guild, and command a
 
 ## Identifier validation boundary
 
-Supply Discord identifiers as positive decimal snowflake strings. The current handlers convert several `guild_id` and `channel_id` values with `int(...)` outside a controlled validation boundary. Empty, whitespace-only, non-decimal, zero, negative, boolean, or otherwise malformed values can therefore raise an exception instead of returning the normal JSON error object.
+Supply Discord identifiers as positive decimal snowflake strings. The current handlers convert several `guild_id` and `channel_id` values with `int(...)` outside a controlled validation boundary. Empty, whitespace-only, non-decimal, zero, negative, boolean, or otherwise malformed values can therefore raise an exception or produce inconsistent scope behavior instead of returning the normal JSON error object.
 
 Do not pass untrusted free-form text into identifier fields. Stable validation and controlled errors are tracked in [Issue #13](https://github.com/Capslockb/vapi-discord-bridge/issues/13). This validation work does not replace the authorization boundary above: a syntactically valid ID is still not proof of permission.
 
@@ -74,7 +74,7 @@ Omit `guild_id` to stop all active bridges:
 voice_vapi_stop
 ```
 
-A malformed supplied `guild_id` is not the same as omission and may currently escape the normal error contract; see Issue #13.
+> Scope warning: the current handler converts the supplied value with `int(...)` and uses integer zero as its stop-all sentinel. A supplied `guild_id` of `"0"` or boolean `false` therefore takes the stop-all path instead of producing a controlled validation error. Never use those values as placeholders; omit `guild_id` only when an intentional and authorized stop-all operation is required. Issue #13 requires stop-all to remain available only for genuine omission.
 
 > Current limitation: this tool calls the bridge media stop routine but does not consistently terminate the owning sidecar task, close the loopback listener, or remove the registry entry immediately. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
 
