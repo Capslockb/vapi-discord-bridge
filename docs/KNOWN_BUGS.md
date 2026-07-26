@@ -112,9 +112,14 @@ Use the exact provider and voice ID from Vapi, or configure them on a saved Vapi
 
 ### 12. Some defined tuning variables are ineffective
 
-- `DISCORD_VAPI_KEEPALIVE_SECONDS` is read, but the active keepalive loop sends silence every 20 ms and does not use the configured interval.
-- `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` appears in health output but is not used as a separate watchdog threshold.
-- `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` is defined but should not be relied on until its runtime use is verified.
+- `DISCORD_VAPI_KEEPALIVE_SECONDS` is parsed, but `_keepalive_loop()` sends silence every 20 ms on a hard-coded cadence and never uses the configured interval.
+- `KEEPALIVE_MESSAGE` is defined but is not sent by the active WebSocket path.
+- `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` appears in health output but is not used as a grace or shutdown threshold.
+- `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` is parsed but is not consumed by playback or turn-completion logic.
+
+Changing these values currently does not alter the corresponding runtime behavior. Treat them as inactive configuration rather than tuning controls.
+
+**Tracking:** [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
 
 ### 13. Zero does not currently disable quiet auto-leave
 
