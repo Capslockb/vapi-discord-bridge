@@ -24,10 +24,11 @@ The [`diagrams/`](diagrams/) directory contains text diagrams for the data flow,
 - The localhost `/stop` and `/say` routes are unauthenticated, and `/say` places injected speech text in the request URL and echoes it in the response. Keep the listener loopback-only and unproxied; see [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 - The HTTP `/stop` route and `voice_vapi_stop` do not reliably terminate the owning sidecar task, loopback listener, and registry entry. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
 - `DISCORD_VAPI_KEEPALIVE_SECONDS`, `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS`, and `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` are currently inactive controls despite being parsed or exposed. Do not use them for operational guarantees; see [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
+- The receive loop can log complete parsed Vapi JSON payloads at DEBUG, and a transcript that triggers the `disconnect` path is logged in full at INFO. Treat gateway logs as voice-content records until [Issue #15](https://github.com/Capslockb/vapi-discord-bridge/issues/15) is resolved.
 
 ## Safety notes
 
 - Keep Discord and Vapi credentials in `~/.hermes/.env` with mode `0600`; do not commit them.
 - Keep the HTTP control port bound to loopback and do not publish it through a proxy, tunnel, or container port mapping.
-- Treat transcript or summary input files as potentially sensitive, and do not pass arbitrary paths from untrusted input.
+- Treat transcript files, summary inputs, and gateway logs as potentially sensitive. Inspect and redact logs before attaching them to an issue or support request.
 - Do not run this bridge and another Discord voice bridge in the same guild at the same time.
