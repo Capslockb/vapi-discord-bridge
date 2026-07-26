@@ -12,12 +12,29 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
-DOC_NAMES = {"README.md", "SECURITY.md", "CONTRIBUTING.md", "AGENTS.md"}
+DOC_NAMES = {
+    "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "AGENTS.md",
+}
+PROTECTED_PATHS = {".github/CODEOWNERS"}
 DOC_DIR_PARTS = {"docs", "doc", "website", "site", "public"}
 FIXTURE_PARTS = {"tests", "fixtures", "public-docs"}
-DOC_EXTS = {".md", ".mdx", ".rst", ".txt"}
+DOC_EXTS = {
+    ".md",
+    ".mdx",
+    ".rst",
+    ".txt",
+    ".html",
+    ".htm",
+    ".adoc",
+    ".asciidoc",
+}
 EXCLUDE_PARTS = {"i18n", "CHANGELOG.md", "sessions", "vendor", "node_modules", ".git"}
 
 PATTERNS = [
@@ -112,9 +129,12 @@ def ensure_push_base_available() -> bool:
 
 def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
     candidate = Path(path)
+    normalized_path = candidate.as_posix()
     parts = set(candidate.parts)
     if parts & EXCLUDE_PARTS:
         return False
+    if normalized_path in PROTECTED_PATHS:
+        return True
     if include_fixtures and FIXTURE_PARTS <= parts and candidate.suffix.lower() in DOC_EXTS:
         return True
     return candidate.name in DOC_NAMES or (
@@ -127,7 +147,7 @@ def changed_files() -> list[str]:
         return [str(path) for path in Path(".").rglob("*") if path.is_file()]
 
     proc = subprocess.run(
-        ["git", "diff", "--name-only", diff_range()],
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", diff_range()],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -137,7 +157,7 @@ def changed_files() -> list[str]:
 
     if not os.environ.get("GITHUB_ACTIONS"):
         proc = subprocess.run(
-            ["git", "diff", "--name-only", "--cached"],
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", "--cached"],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -193,14 +213,20 @@ def _line_for_offset(starts: list[int], offset: int) -> int:
     return bisect.bisect_right(starts, offset)
 
 
-def scan_file(path: str, line_numbers: list[int] | range) -> list[Finding]:
+def scan_file(
+    path: str,
+    line_numbers: Iterable[int] | None,
+) -> list[Finding]:
     try:
         raw_text = Path(path).read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return [(path, 1, "PDS900", "read-failure")]
 
     lines = raw_text.splitlines()
-    targets = {line for line in line_numbers if 1 <= line <= len(lines)}
+    if line_numbers is None:
+        targets = set(range(1, len(lines) + 1))
+    else:
+        targets = {line for line in line_numbers if 1 <= line <= len(lines)}
     if not targets:
         return []
 
@@ -258,11 +284,7 @@ def main() -> int:
 
     findings: list[Finding] = []
     for path in files:
-        if added_lines is None:
-            total = len(Path(path).read_text(encoding="utf-8", errors="ignore").splitlines())
-            line_numbers: list[int] | range = range(1, total + 1)
-        else:
-            line_numbers = sorted(added_lines.get(path, set()))
+        line_numbers = None if added_lines is None else sorted(added_lines.get(path, set()))
         findings.extend(scan_file(path, line_numbers))
 
     if findings:
