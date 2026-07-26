@@ -183,7 +183,7 @@ Treat any transcript files as sensitive and keep them outside version control wi
 See [`docs/KNOWN_BUGS.md`](docs/KNOWN_BUGS.md). Important current boundaries include:
 
 1. Discord voice connection retries may make startup appear stalled on some endpoints.
-2. Only one Discord voice bridge should control a guild voice client at a time.
+2. The fixed loopback control port currently limits the entire Hermes gateway process to one active Vapi sidecar across all Discord guilds; a second concurrent start fails before Discord or Vapi connection begins. See [Issue #18](https://github.com/Capslockb/vapi-discord-bridge/issues/18).
 3. Installer model/voice prompts do not yet map cleanly to the runtime configuration contract.
 4. JSONL transcript persistence and Vapi function-call dispatch are not implemented in the current bridge path.
 5. The localhost `/stop` and `/say` routes do not yet require authentication.
