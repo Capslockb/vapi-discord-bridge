@@ -94,11 +94,11 @@ The plugin contains a repository-specific default `DISCORD_VAPI_USER_ID`. The cu
 
 ### 10. Malformed tool identifiers can escape controlled errors
 
-The Hermes schemas accept Discord identifiers as strings, while the current start, leave, say, and stop paths convert several values with `int(...)` before entering a controlled validation boundary.
+The Hermes schemas accept Discord identifiers as strings, while the current start, leave, say, and stop paths convert several `guild_id` and `channel_id` values with `int(...)` before entering a controlled validation boundary.
 
-**Symptom:** an empty, whitespace-only, non-decimal, zero, negative, boolean, or otherwise malformed `guild_id` or `channel_id` can raise `TypeError` or `ValueError` instead of returning the plugin's normal JSON error object.
+**Symptom:** empty, whitespace-only, non-decimal, or otherwise non-coercible values can raise `TypeError` or `ValueError` instead of returning the plugin's normal JSON error object. Other invalid values can pass coercion and produce inconsistent behavior. Most importantly, `voice_vapi_stop` currently treats any supplied value that coerces to integer zero—including the string `"0"` or boolean `false`—as the stop-all branch, even though stop-all is intended only when `guild_id` is genuinely omitted.
 
-**Workaround:** pass only known positive decimal Discord snowflake strings. Do not map untrusted free-form text directly into identifier fields. For `voice_vapi_stop`, omit `guild_id` only when an intentional stop-all operation is authorized; a malformed supplied value is not a safe substitute for omission.
+**Workaround:** pass only known positive decimal Discord snowflake strings. Never pass `0`, `false`, empty text, or untrusted free-form values as `voice_vapi_stop.guild_id`; omit `guild_id` only when an intentional and authorized stop-all operation is required.
 
 **Tracking:** [Issue #13](https://github.com/Capslockb/vapi-discord-bridge/issues/13).
 
