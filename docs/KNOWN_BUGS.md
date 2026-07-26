@@ -159,6 +159,16 @@ An open Vapi call can continue incurring charges even when conversation is quiet
 
 Although the current bridge does not persist transcripts itself, any JSONL files supplied to the summary tool may contain private voice content, tool arguments, and identifiers. Store them with restrictive permissions and do not commit them.
 
+### 18. Gateway logs can retain spoken content and control payloads
+
+The active receive loop logs complete parsed Vapi message objects at DEBUG. When a transcript containing `disconnect` triggers shutdown, the spoken transcript is also propagated as the leave reason and logged at INFO.
+
+**Impact:** transcripts, tool/control payloads, identifiers, provider metadata, and other call content can persist in journald, terminal captures, monitoring systems, or copied support bundles. Lowering the log level does not remove the INFO-level disconnect-reason exposure.
+
+**Workaround:** treat all gateway logs as sensitive voice-session records. Avoid enabling or retaining verbose logs unless necessary, inspect them locally, and redact transcript text, identifiers, URLs, tokens, and raw provider payloads before sharing. Do not rely on log-level configuration as a complete privacy control.
+
+**Tracking:** [Issue #15](https://github.com/Capslockb/vapi-discord-bridge/issues/15).
+
 ## Reporting a new bug
 
 Include:
@@ -181,4 +191,4 @@ Include:
 
 7. Exact reproduction steps and expected versus actual behavior.
 
-Never include Discord tokens, Vapi keys, transcript contents, or private user/channel identifiers in a public issue.
+Never include Discord tokens, Vapi keys, transcript contents, raw provider payloads, tool arguments, private URLs, or private user/channel identifiers in a public issue.
