@@ -23,6 +23,7 @@ The [`diagrams/`](diagrams/) directory contains text diagrams for the data flow,
 - Hermes tools accept explicit guild, channel, and user identifiers, but the plugin does not independently authorize the caller for those targets. Restrict tool access to trusted operators until [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8) is resolved.
 - The localhost `/stop` and `/say` routes are unauthenticated, and `/say` places injected speech text in the request URL and echoes it in the response. Keep the listener loopback-only and unproxied; see [Issue #3](https://github.com/Capslockb/vapi-discord-bridge/issues/3).
 - The HTTP `/stop` route and `voice_vapi_stop` do not reliably terminate the owning sidecar task, loopback listener, and registry entry. Prefer `voice_vapi_leave` for normal per-guild shutdown until [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4) is resolved.
+- `DISCORD_VAPI_KEEPALIVE_SECONDS`, `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS`, and `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` are currently inactive controls despite being parsed or exposed. Do not use them for operational guarantees; see [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
 
 ## Safety notes
 
