@@ -28,6 +28,8 @@ Arguments:
 - `channel_id` — voice channel ID to join.
 - `user_id` — optional Discord user ID whose current voice channel should be used when `channel_id` is omitted.
 
+> Replacement warning: the current start path may force-disconnect the guild's existing voice client before the requested channel and replacement bridge are known to be usable. A stale or wrong target, Vapi startup failure, or Discord connection failure can therefore interrupt a working voice session. A failed `move_to()` attempt can also be returned as `status: "success"` with `couldn't move` in the message. Verify the target IDs before invoking this tool, avoid bridge switching during critical sessions, and do not treat that response as evidence that the move succeeded. Fail-closed replacement ordering and truthful move results are tracked in [Issue #17](https://github.com/Capslockb/vapi-discord-bridge/issues/17).
+
 ## `voice_vapi_leave`
 
 Stop the bridge for one guild.
