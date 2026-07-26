@@ -48,9 +48,6 @@ UNCERTAIN = re.compile(
 BENIGN_UNCERTAIN = re.compile(
     r"(?i)\b(example|sample|template|user-facing|configuration|API|worker thread|service worker|inference|event loop|model name|route|provider|guardrail|security policy|documentation)\b"
 )
-BENIGN_PRODUCT = re.compile(
-    r"(?i)\b(sponsor|sponsorship|release pipeline|reviews? every pull request|security|configuration|configured|deploy|deployment|feature flag|environment variable|env var|health check|migration|healthcheck|provider override|combo|compact_prompt|system prompt used during compaction|auth token|credential|locale|CI pipeline|quality gate|merge|pull request|token validation|instance)\b"
-)
 
 Finding = tuple[str, int, str, str]
 
@@ -149,30 +146,12 @@ def scan_file(path: str, line_numbers: list[int] | range) -> list[Finding]:
         if line_number < 1 or line_number > len(lines):
             continue
         line = lines[line_number - 1]
-        quoted_example = bool(
-            re.search(
-                r'"[^"]*(ignore|disregard|override|reveal|show me your system prompt)[^"]*"',
-                line,
-                re.I,
-            )
-        )
-        human_guidance = bool(
-            re.search(
-                r"(?i)(contributor'?s? (PR|pull request)|merge via (github|the )|so they get credit|always merge|never close a contributor)",
-                line,
-            )
-        )
 
         for rule_id, category, pattern in PATTERNS:
-            if not pattern.search(line):
-                continue
-            if rule_id in {"PDS001", "PDS002"} and quoted_example:
-                continue
-            if rule_id == "PDS003" and (human_guidance or BENIGN_PRODUCT.search(line)):
-                continue
-            findings.append((path, line_number, rule_id, category))
+            if pattern.search(line):
+                findings.append((path, line_number, rule_id, category))
 
-        if UNCERTAIN.search(line) and not BENIGN_UNCERTAIN.search(line) and not human_guidance:
+        if UNCERTAIN.search(line) and not BENIGN_UNCERTAIN.search(line):
             findings.append((path, line_number, "PDS005", "possible-model-directed-instruction"))
     return findings
 
