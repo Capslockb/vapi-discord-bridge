@@ -37,16 +37,20 @@ JSON messages on the Vapi WebSocket are control/status messages. Audio itself is
 
 ## Startup sequence
 
-1. `voice_vapi` or `/voice-vapi` resolves a Discord guild and voice channel.
-2. The plugin checks `_starting` and `_active_bridges` to avoid duplicate starts.
-3. Any existing Discord voice client in that guild is force-disconnected to avoid competing bridge ownership.
-4. `plugin/bridge.py` is loaded and `run_sidecar()` is started as an asyncio task.
-5. The loopback HTTP listener binds to `127.0.0.1:DISCORD_VAPI_PORT`.
-6. `VapiVoiceBridge.start()` creates the Vapi call and opens its WebSocket **before** connecting Discord voice.
-7. Discord connects with `VoiceRecvClient`, starts `VapiPCMSink`, and starts playback through `LiveAudioSource`.
-8. The ready result is returned and the connected voice client is stored in `_active_bridges`.
+The current replacement sequence is disruptive and is not fail-closed:
 
-The plugin waits up to 120 seconds for the complete bridge startup. The Discord voice connection itself uses a 60-second timeout.
+1. `voice_vapi` or `/voice-vapi` obtains guild and channel identifiers, then checks `_starting` and `_active_bridges` for an existing bridge record.
+2. An already connected bridge in the same channel returns success without restarting. A different-channel request calls `move_to()`; a move exception is currently returned as `status: "success"` with `Active but couldn't move` in the message.
+3. For a fresh or stale-entry start, the plugin verifies that the Discord client and guild exist.
+4. The plugin force-disconnects any current guild voice client **before** looking up and validating the requested channel.
+5. The requested channel is resolved only after that disconnect. A missing, stale, wrong, or unsuitable target can therefore leave the guild without its previous working voice session.
+6. `plugin/bridge.py` is loaded, `run_sidecar()` starts as an asyncio task, and the loopback listener binds to `127.0.0.1:DISCORD_VAPI_PORT`.
+7. `VapiVoiceBridge.start()` checks voice-receive support and performs a second disconnect of any connected guild voice client **before** calling `_vapi.connect()`.
+8. The Vapi call and WebSocket are established before the new Discord voice connection is attempted.
+9. Discord connects with `VoiceRecvClient`, starts `VapiPCMSink`, and starts playback through `LiveAudioSource`.
+10. The ready result is returned and the connected voice client is stored in `_active_bridges`.
+
+The plugin waits up to 120 seconds for the complete bridge startup. The Discord voice connection itself uses a 60-second timeout. A failed Vapi or Discord startup does not restore a voice client disconnected by the replacement path. Fail-closed validation, truthful move errors, and explicit session-preservation behavior are tracked in [Issue #17](https://github.com/Capslockb/vapi-discord-bridge/issues/17).
 
 ## Vapi call creation
 
@@ -138,9 +142,9 @@ Those capability gaps are tracked in [Issue #2](https://github.com/Capslockb/vap
 `plugin/__init__.py` stores one active bridge record per guild in `_active_bridges`.
 
 - A second start for the same connected channel is a no-op success.
-- A start for a different channel attempts to move the existing Discord voice client.
+- A start for a different channel attempts to move the existing Discord voice client; a move failure is currently reported with a success status even though the existing record remains in its prior state.
 - A disconnected stale entry is cancelled and removed before a fresh start.
-- Starting Vapi may force-disconnect another voice bridge already using that guild's Discord voice-client slot.
+- A fresh or replacement start may force-disconnect another voice bridge already using that guild's Discord voice-client slot before the target and replacement are known to be usable.
 
 Supported stop paths include:
 
@@ -187,9 +191,12 @@ After a successful start, the autostart file is deleted unless `DISCORD_VAPI_KEE
 
 | Symptom | Current behavior |
 |---|---|
-| Vapi call creation fails | Startup returns an error before Discord voice is connected. |
+| Target channel lookup or suitability fails | The plugin can already have disconnected the guild's existing voice client before returning the target error. |
+| Vapi call creation or WebSocket setup fails | Startup returns an error, but a guild voice client disconnected by either pre-Vapi replacement layer is not restored. |
+| Discord connection fails | Vapi is disconnected and startup fails; the previous guild voice session is not restored. |
+| Discord playback/listener startup fails | The new bridge stops, with no rollback to the previous guild voice session. |
+| Existing bridge channel move fails | The handler currently returns `status: "success"` with an error message and leaves the existing bridge record unchanged. |
 | Vapi WebSocket send/receive closes | The Vapi bridge marks itself stopped; the connection watchdog tears down Discord voice. |
-| Discord connection fails | Vapi is disconnected and startup fails. |
 | Discord disconnects while running | The watchdog calls bridge shutdown. |
 | Output queue is temporarily empty | `LiveAudioSource` returns a silent Discord frame rather than ending playback. |
 | Bridge stop leaves sidecar task alive | Stale-entry recovery may clean it on the next start; see Issue #4. |
