@@ -71,7 +71,7 @@ The mutating routes are currently unauthenticated. `/say` also places the inject
 | `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` | `900` | Stop after this many seconds since the last non-empty PCM frame from a non-bot Discord user. This is not currently a verified speech-inactivity timer. The intended disable value is `0`, but one watchdog path still stops after minimum uptime; see Issues [#11](https://github.com/Capslockb/vapi-discord-bridge/issues/11) and [#12](https://github.com/Capslockb/vapi-discord-bridge/issues/12). |
 | `DISCORD_VAPI_AUTO_LEAVE_MIN_UPTIME_SECONDS` | `120` | Minimum bridge uptime before idle prompting or auto-leave may fire. |
 | `DISCORD_VAPI_IDLE_PROMPT_SECONDS` | `120` | Send the idle prompt after this many seconds since the last non-empty PCM frame. `0` disables the prompt. |
-| `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` | `60` | Reported in health output; the current watchdog does not use it as a separate shutdown threshold. |
+| `DISCORD_VAPI_IDLE_PROMPT_GRACE_SECONDS` | `60` | Exposed in health output only. The watchdog does not use it as a grace or shutdown threshold, so changing it has no behavioral effect. |
 | `DISCORD_VAPI_IDLE_PROMPT_TEXT` | `Are you still there?` | Text sent through Vapi when the idle prompt fires. |
 
 Until [Issue #11](https://github.com/Capslockb/vapi-discord-bridge/issues/11) is fixed and tested, do not rely on `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=0` to keep a bridge open. A deliberately large positive value is only a temporary workaround; unattended calls can continue incurring provider costs.
@@ -85,10 +85,10 @@ The runtime also resets its activity clock for every non-empty PCM frame from a 
 | `DISCORD_VAPI_OUTPUT_PREROLL_MS` | `320` | Silence inserted before a new output turn. |
 | `DISCORD_VAPI_OUTPUT_FADE_IN_MS` | `0` | Fade-in applied to the first output chunk. |
 | `DISCORD_VAPI_OUTPUT_READ_WAIT_SECONDS` | `0.005` | Queue wait before returning a silence frame to Discord playback. |
-| `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` | `240` | Defined by the runtime; verify behavior before relying on it for tuning. |
+| `DISCORD_VAPI_OUTPUT_TAIL_PAD_MS` | `240` | Parsed into `OUTPUT_TAIL_PAD_MS`, but no playback or turn-completion path consumes it. Changing it currently has no effect. |
 | `DISCORD_VAPI_CLEAR_ON_INTERRUPT` | `true` | Clear queued playback when Vapi reports an interrupted or ended conversation update. |
 
-`DISCORD_VAPI_KEEPALIVE_SECONDS` is currently read but the active keepalive loop sends silence every 20 ms instead of using the configured interval. Treat it as ineffective until the runtime is corrected.
+`DISCORD_VAPI_KEEPALIVE_SECONDS` is parsed, but the active keepalive loop sends silence every 20 ms on a hard-coded cadence and does not use the configured interval. The related `KEEPALIVE_MESSAGE` constant is also not sent. Together with the inactive tail-pad and idle-grace values, this configuration-contract gap is tracked in [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
 
 ## Autostart and voice-channel inference
 
