@@ -68,9 +68,22 @@ The next `voice_vapi()` start normally detects the disconnected voice client and
 
 **Best practice:** select one active bridge per guild and avoid enabling competing autostart configurations simultaneously.
 
+### 8. Bridge replacement is disruptive and not fail-closed
+
+The replacement path can disconnect a working guild voice client before the requested replacement is known to be usable at two separate layers:
+
+- `plugin/__init__.py::voice_vapi()` calls its force-disconnect helper before it resolves and validates the target channel.
+- `plugin/bridge.py::VapiVoiceBridge.start()` disconnects the guild voice client before `_vapi.connect()`, despite the nearby comment stating that Vapi is connected first.
+
+A stale or unsuitable target, Vapi startup failure, or Discord connection failure can therefore leave the guild without the previously working session. When an existing bridge is moved and `move_to()` fails, the current handler also returns `status: "success"` with `couldn't move` in the message.
+
+**Workaround:** treat `voice_vapi` as a disruptive guild-wide replacement operation. Verify the guild and voice-channel IDs before invocation, avoid switching bridges during critical sessions, and do not treat a success response containing `couldn't move` as evidence that the move succeeded.
+
+**Tracking:** [Issue #17](https://github.com/Capslockb/vapi-discord-bridge/issues/17).
+
 ## Autostart and command inference
 
-### 8. Autostart file lifecycle
+### 9. Autostart file lifecycle
 
 A successful autostart deletes `~/.hermes/voice-vapi-autostart.json` by default. Set `DISCORD_VAPI_KEEP_AUTOSTART_FILE=1` only when persistent rejoin-on-boot behavior is intentional.
 
@@ -80,7 +93,7 @@ If startup never succeeds, the file remains available for the retry window and c
 rm -f ~/.hermes/voice-vapi-autostart.json
 ```
 
-### 9. Slash commands use a fixed configured user
+### 10. Slash commands use a fixed configured user
 
 The plugin contains a repository-specific default `DISCORD_VAPI_USER_ID`. The current `/voice-vapi` and `/voice-vapi-leave` wrappers use that fixed configured user to infer a voice channel or guild; they do not use the Discord member who invoked the command.
 
@@ -92,7 +105,7 @@ The plugin contains a repository-specific default `DISCORD_VAPI_USER_ID`. The cu
 
 **Tracking:** [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8).
 
-### 10. Malformed tool identifiers can escape controlled errors
+### 11. Malformed tool identifiers can escape controlled errors
 
 The Hermes schemas accept Discord identifiers as strings, while the current start, leave, say, and stop paths convert several `guild_id` and `channel_id` values with `int(...)` before entering a controlled validation boundary.
 
@@ -104,13 +117,13 @@ The Hermes schemas accept Discord identifiers as strings, while the current star
 
 ## Configuration and tuning
 
-### 11. Voice display names are not voice IDs
+### 12. Voice display names are not voice IDs
 
 The inline assistant sends a provider-specific `voiceId`. Human-readable names such as `jennifer` may not be valid IDs for the selected provider.
 
 Use the exact provider and voice ID from Vapi, or configure them on a saved Vapi assistant.
 
-### 12. Some defined tuning variables are ineffective
+### 13. Some defined tuning variables are ineffective
 
 - `DISCORD_VAPI_KEEPALIVE_SECONDS` is parsed, but `_keepalive_loop()` sends silence every 20 ms on a hard-coded cadence and never uses the configured interval.
 - `KEEPALIVE_MESSAGE` is defined but is not sent by the active WebSocket path.
@@ -121,7 +134,7 @@ Changing these values currently does not alter the corresponding runtime behavio
 
 **Tracking:** [Issue #14](https://github.com/Capslockb/vapi-discord-bridge/issues/14).
 
-### 13. Zero does not currently disable quiet auto-leave
+### 14. Zero does not currently disable quiet auto-leave
 
 `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS=0` is intended to disable the quiet-timeout stop, and the helper method contains that guard. However, the watchdog performs an earlier unconditional `idle >= AUTO_LEAVE_QUIET_SECONDS` comparison. With a value of `0`, the bridge can therefore stop as soon as the minimum-uptime gate is reached.
 
@@ -129,7 +142,7 @@ Changing these values currently does not alter the corresponding runtime behavio
 
 **Tracking:** [Issue #11](https://github.com/Capslockb/vapi-discord-bridge/issues/11).
 
-### 14. Quiet activity includes every non-empty PCM frame
+### 15. Quiet activity includes every non-empty PCM frame
 
 The bridge resets `_last_activity_at` whenever it receives a non-empty PCM frame from a non-bot Discord user. It does not currently require detected speech: the existing energy helper and silence counters are not used by the active sink path.
 
@@ -139,7 +152,7 @@ The bridge resets `_last_activity_at` whenever it receives a non-empty PCM frame
 
 **Tracking:** [Issue #12](https://github.com/Capslockb/vapi-discord-bridge/issues/12).
 
-### 15. Module import path
+### 16. Module import path
 
 The installed plugin directory is named `discord-vapi`. A hyphen is not valid in a normal Python import identifier, so this is invalid:
 
@@ -151,15 +164,15 @@ Hermes loads the plugin from its filesystem path. Custom Python code should not 
 
 ## Cost and privacy
 
-### 16. Idle calls may continue consuming paid services
+### 17. Idle calls may continue consuming paid services
 
 An open Vapi call can continue incurring charges even when conversation is quiet. Configure a tested positive `DISCORD_VAPI_AUTO_LEAVE_QUIET_SECONDS` value, verify current provider pricing, and monitor unattended sessions. Until Issues [#11](https://github.com/Capslockb/vapi-discord-bridge/issues/11) and [#12](https://github.com/Capslockb/vapi-discord-bridge/issues/12) are resolved, the timer is not a dependable disable control or speech-inactivity cost cap.
 
-### 17. Transcript inputs are sensitive
+### 18. Transcript inputs are sensitive
 
 Although the current bridge does not persist transcripts itself, any JSONL files supplied to the summary tool may contain private voice content, tool arguments, and identifiers. Store them with restrictive permissions and do not commit them.
 
-### 18. Gateway logs can retain spoken content and control payloads
+### 19. Gateway logs can retain spoken content and control payloads
 
 The active receive loop logs complete parsed Vapi message objects at DEBUG. When a transcript containing `disconnect` triggers shutdown, the spoken transcript is also propagated as the leave reason and logged at INFO.
 
@@ -169,7 +182,7 @@ The active receive loop logs complete parsed Vapi message objects at DEBUG. When
 
 **Tracking:** [Issue #15](https://github.com/Capslockb/vapi-discord-bridge/issues/15).
 
-### 19. Injected speech is unbounded and echoed in responses
+### 20. Injected speech is unbounded and echoed in responses
 
 The active `voice_vapi_say` tool and loopback `/say?text=...` route accept caller-controlled text without a shared maximum length. Each path sends the complete value in one provider message and reproduces the submitted speech content in its success result.
 
