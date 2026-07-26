@@ -7,6 +7,7 @@ category. Matched repository text is never copied into CI output.
 from __future__ import annotations
 
 import argparse
+import bisect
 import os
 import re
 import subprocess
@@ -67,6 +68,48 @@ def default_branch() -> str:
     return "main"
 
 
+def push_base_sha() -> str | None:
+    value = os.environ.get("GITHUB_EVENT_BEFORE", "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        return None
+    if set(value) == {"0"}:
+        return None
+    return value.lower()
+
+
+def diff_range() -> str:
+    before = push_base_sha()
+    if before:
+        return f"{before}..HEAD"
+    return f"origin/{default_branch()}...HEAD"
+
+
+def ensure_push_base_available() -> bool:
+    before = push_base_sha()
+    if not before:
+        return True
+    check = subprocess.run(
+        ["git", "cat-file", "-e", f"{before}^{{commit}}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if check.returncode == 0:
+        return True
+    fetch = subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", before],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if fetch.returncode != 0:
+        return False
+    check = subprocess.run(
+        ["git", "cat-file", "-e", f"{before}^{{commit}}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return check.returncode == 0
+
+
 def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
     candidate = Path(path)
     parts = set(candidate.parts)
@@ -80,9 +123,11 @@ def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
 
 
 def changed_files() -> list[str]:
-    base = default_branch()
+    if not ensure_push_base_available():
+        return [str(path) for path in Path(".").rglob("*") if path.is_file()]
+
     proc = subprocess.run(
-        ["git", "diff", "--name-only", f"origin/{base}...HEAD"],
+        ["git", "diff", "--name-only", diff_range()],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -90,14 +135,15 @@ def changed_files() -> list[str]:
     if proc.returncode == 0:
         return [line for line in proc.stdout.splitlines() if line]
 
-    proc = subprocess.run(
-        ["git", "diff", "--name-only", "--cached"],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    if proc.returncode == 0:
-        return [line for line in proc.stdout.splitlines() if line]
+    if not os.environ.get("GITHUB_ACTIONS"):
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "--cached"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        if proc.returncode == 0:
+            return [line for line in proc.stdout.splitlines() if line]
 
     return [str(path) for path in Path(".").rglob("*") if path.is_file()]
 
@@ -105,9 +151,11 @@ def changed_files() -> list[str]:
 def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
     if not files:
         return {}
-    base = default_branch()
+    if not ensure_push_base_available():
+        return None
+
     proc = subprocess.run(
-        ["git", "diff", "--unified=0", f"origin/{base}...HEAD", "--", *files],
+        ["git", "diff", "--unified=0", diff_range(), "--", *files],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -135,25 +183,62 @@ def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
     return output
 
 
+def _line_starts(text: str) -> list[int]:
+    starts = [0]
+    starts.extend(index + 1 for index, char in enumerate(text) if char == "\n")
+    return starts
+
+
+def _line_for_offset(starts: list[int], offset: int) -> int:
+    return bisect.bisect_right(starts, offset)
+
+
 def scan_file(path: str, line_numbers: list[int] | range) -> list[Finding]:
     try:
-        lines = Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()
+        raw_text = Path(path).read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return [(path, 1, "PDS900", "read-failure")]
 
-    findings: list[Finding] = []
-    for line_number in line_numbers:
-        if line_number < 1 or line_number > len(lines):
+    lines = raw_text.splitlines()
+    targets = {line for line in line_numbers if 1 <= line <= len(lines)}
+    if not targets:
+        return []
+
+    normalized = raw_text.replace("\n", " ")
+    starts = _line_starts(raw_text)
+    findings: set[Finding] = set()
+
+    def record_matches(pattern: re.Pattern[str], rule_id: str, category: str) -> None:
+        for match in pattern.finditer(normalized):
+            start_line = _line_for_offset(starts, match.start())
+            end_offset = max(match.start(), match.end() - 1)
+            end_line = _line_for_offset(starts, end_offset)
+            changed_lines = sorted(
+                line for line in targets if start_line <= line <= end_line
+            )
+            if changed_lines:
+                findings.add((path, changed_lines[0], rule_id, category))
+
+    for rule_id, category, pattern in PATTERNS:
+        record_matches(pattern, rule_id, category)
+
+    for match in UNCERTAIN.finditer(normalized):
+        start_line = _line_for_offset(starts, match.start())
+        end_offset = max(match.start(), match.end() - 1)
+        end_line = _line_for_offset(starts, end_offset)
+        changed_lines = sorted(
+            line for line in targets if start_line <= line <= end_line
+        )
+        if not changed_lines:
             continue
-        line = lines[line_number - 1]
+        context_start = starts[start_line - 1]
+        context_end = starts[end_line] if end_line < len(starts) else len(normalized)
+        if not BENIGN_UNCERTAIN.search(normalized[context_start:context_end]):
+            findings.add(
+                (path, changed_lines[0], "PDS005", "possible-model-directed-instruction")
+            )
 
-        for rule_id, category, pattern in PATTERNS:
-            if pattern.search(line):
-                findings.append((path, line_number, rule_id, category))
-
-        if UNCERTAIN.search(line) and not BENIGN_UNCERTAIN.search(line):
-            findings.append((path, line_number, "PDS005", "possible-model-directed-instruction"))
-    return findings
+    return sorted(findings, key=lambda finding: (finding[1], finding[2], finding[3]))
 
 
 def main() -> int:
