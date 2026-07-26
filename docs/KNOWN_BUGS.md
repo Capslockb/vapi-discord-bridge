@@ -169,6 +169,16 @@ The active receive loop logs complete parsed Vapi message objects at DEBUG. When
 
 **Tracking:** [Issue #15](https://github.com/Capslockb/vapi-discord-bridge/issues/15).
 
+### 19. Injected speech is unbounded and echoed in responses
+
+The active `voice_vapi_say` tool and loopback `/say?text=...` route accept caller-controlled text without a shared maximum length. Each path sends the complete value in one provider message and reproduces the submitted speech content in its success result.
+
+**Impact:** oversized or untrusted values can create excessive speech generation, avoidable provider cost, large tool traces, and additional retention of private content in callers, logs, or support captures.
+
+**Workaround:** keep injected text short, operator-authored, and non-sensitive. Do not pass documents, transcripts, secrets, or arbitrary untrusted input. Treat the accepted owner direction as pending runtime work: one conservative shared length contract, controlled handling of empty, control, newline, multi-byte, and oversized input, and metadata-only success responses.
+
+**Tracking:** [Issue #16](https://github.com/Capslockb/vapi-discord-bridge/issues/16).
+
 ## Reporting a new bug
 
 Include:
