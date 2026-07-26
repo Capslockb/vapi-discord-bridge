@@ -62,11 +62,15 @@ The next `voice_vapi()` start normally detects the disconnected voice client and
 
 **Tracking:** [Issue #4](https://github.com/Capslockb/vapi-discord-bridge/issues/4).
 
-### 7. Only one voice bridge per guild
+### 7. Bridge capacity is single-instance at both guild and gateway levels
 
 `discord-vapi` and another Discord voice bridge share the guild voice-client slot. Starting one may force-disconnect the other.
 
-**Best practice:** select one active bridge per guild and avoid enabling competing autostart configurations simultaneously.
+Separately, the plugin registry is keyed by guild but every Vapi sidecar binds the same process-wide `127.0.0.1:DISCORD_VAPI_PORT` listener. The current Hermes gateway process therefore supports only one active Vapi sidecar across all Discord guilds; a second concurrent guild start fails at the listener bind before Discord or Vapi connection begins.
+
+**Best practice:** select one active bridge per guild, avoid competing autostart configurations, and do not attempt concurrent Vapi starts for different guilds from the same gateway process.
+
+**Tracking:** [Issue #18](https://github.com/Capslockb/vapi-discord-bridge/issues/18).
 
 ### 8. Bridge replacement is disruptive and not fail-closed
 
