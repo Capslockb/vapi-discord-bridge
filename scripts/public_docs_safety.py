@@ -7,12 +7,11 @@ category. Matched repository text is never copied into CI output.
 from __future__ import annotations
 
 import argparse
-import bisect
 import os
 import re
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 DOC_NAMES = {
@@ -22,9 +21,7 @@ DOC_NAMES = {
     "CODE_OF_CONDUCT.md",
     "AGENTS.md",
 }
-PROTECTED_PATHS = {".github/CODEOWNERS"}
 DOC_DIR_PARTS = {"docs", "doc", "website", "site", "public"}
-FIXTURE_PARTS = {"tests", "fixtures", "public-docs"}
 DOC_EXTS = {
     ".md",
     ".mdx",
@@ -35,36 +32,70 @@ DOC_EXTS = {
     ".adoc",
     ".asciidoc",
 }
-EXCLUDE_PARTS = {"i18n", "CHANGELOG.md", "sessions", "vendor", "node_modules", ".git"}
+EXCLUDE_PARTS = {
+    ".git",
+    "i18n",
+    "node_modules",
+    "sessions",
+    "vendor",
+}
+EXCLUDE_NAMES = {"CHANGELOG.md"}
+PROTECTED_EXACT = {
+    ".github/codeowners",
+    ".github/pull_request_template.md",
+}
+PROTECTED_PREFIXES = (
+    ".github/pull_request_template/",
+    ".github/issue_template/",
+)
+FIXTURE_PREFIX = "tests/fixtures/public-docs/"
+MAX_WINDOW_LINES = 3
 
 PATTERNS = [
     (
         "PDS001",
         "model-directed-override",
-        re.compile(r"(?i)\b(ignore|disregard|override)\b.{0,100}\b(previous|above|system|developer|policy|instruction)s?\b"),
+        re.compile(
+            r"(?i)\b(ignore|disregard|override)\b.{0,100}"
+            r"\b(previous|above|system|developer|policy|instruction)s?\b"
+        ),
     ),
     (
         "PDS002",
         "secret-or-policy-exfiltration",
-        re.compile(r"(?i)\b(reveal|print|show|exfiltrate|leak)\b.{0,100}\b(secret|token|credential|password|policy|system prompt|developer message)s?\b"),
+        re.compile(
+            r"(?i)\b(reveal|print|show|exfiltrate|leak)\b.{0,100}"
+            r"\b(secret|token|credential|password|policy|system prompt|developer message)s?\b"
+        ),
     ),
     (
         "PDS003",
         "unauthorized-action-request",
-        re.compile(r"(?i)\b(approve|merge|push|deploy|purchase|transfer|delete|rotate|disable)\b.{0,100}\b(PR|pull request|repository|repo|payment|account|guard|check|policy|automation)\b"),
+        re.compile(
+            r"(?i)\b(approve|merge|push|deploy|purchase|transfer|delete|rotate|disable)\b"
+            r".{0,100}\b(PR|pull request|repository|repo|payment|account|guard|check|policy|automation)\b"
+        ),
     ),
     (
         "PDS004",
         "non-public-automation-disclosure",
-        re.compile(r"(?i)\b(privileged command|private control|non-public guard|secret marker|trusted[- ]identity rule|mutation authorization|worker queue|controller lease|private escalation)\b"),
+        re.compile(
+            r"(?i)\b(privileged command|private control|non-public guard|secret marker|"
+            r"trusted[- ]identity rule|mutation authorization|worker queue|"
+            r"controller lease|private escalation)\b"
+        ),
     ),
 ]
 
 UNCERTAIN = re.compile(
-    r"(?i)\b(maintaining model|automation agent|autonomous maintainer|repository bot)\b.{0,100}\b(must|shall|required to|always|never|use tool|run command|obey|ignore|stop when|final status)\b"
+    r"(?i)\b(maintaining model|automation agent|autonomous maintainer|repository bot)\b"
+    r".{0,100}\b(must|shall|required to|always|never|use tool|run command|obey|"
+    r"ignore|stop when|final status)\b"
 )
 BENIGN_UNCERTAIN = re.compile(
-    r"(?i)\b(example|sample|template|user-facing|configuration|API|worker thread|service worker|inference|event loop|model name|route|provider|guardrail|security policy|documentation)\b"
+    r"(?i)\b(example|sample|template|user-facing|configuration|API|worker thread|"
+    r"service worker|inference|event loop|model name|route|provider|guardrail|"
+    r"security policy|documentation)\b"
 )
 
 Finding = tuple[str, int, str, str]
@@ -129,16 +160,21 @@ def ensure_push_base_available() -> bool:
 
 def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
     candidate = Path(path)
-    normalized_path = candidate.as_posix()
-    parts = set(candidate.parts)
-    if parts & EXCLUDE_PARTS:
+    normalized = candidate.as_posix()
+    normalized_lower = normalized.lower()
+    lower_parts = {part.lower() for part in candidate.parts}
+
+    if lower_parts & EXCLUDE_PARTS or candidate.name in EXCLUDE_NAMES:
         return False
-    if normalized_path in PROTECTED_PATHS:
+    if include_fixtures and normalized_lower.startswith(FIXTURE_PREFIX):
+        return candidate.suffix.lower() in DOC_EXTS
+    if normalized_lower in PROTECTED_EXACT:
         return True
-    if include_fixtures and FIXTURE_PARTS <= parts and candidate.suffix.lower() in DOC_EXTS:
-        return True
+    if any(normalized_lower.startswith(prefix) for prefix in PROTECTED_PREFIXES):
+        return candidate.suffix.lower() in DOC_EXTS
     return candidate.name in DOC_NAMES or (
-        candidate.suffix.lower() in DOC_EXTS and bool(parts & DOC_DIR_PARTS)
+        candidate.suffix.lower() in DOC_EXTS
+        and bool(lower_parts & DOC_DIR_PARTS)
     )
 
 
@@ -180,8 +216,10 @@ def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
-    if proc.returncode != 0 or not proc.stdout.strip():
+    if proc.returncode != 0:
         return None
+    if not proc.stdout.strip():
+        return {}
 
     output: dict[str, set[int]] = {}
     current_path: str | None = None
@@ -203,14 +241,22 @@ def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
     return output
 
 
-def _line_starts(text: str) -> list[int]:
-    starts = [0]
-    starts.extend(index + 1 for index, char in enumerate(text) if char == "\n")
-    return starts
-
-
-def _line_for_offset(starts: list[int], offset: int) -> int:
-    return bisect.bisect_right(starts, offset)
+def _bounded_windows(
+    lines: list[str],
+    targets: set[int],
+) -> Iterator[tuple[int, str]]:
+    """Yield one-to-three-line windows containing at least one target line."""
+    for start_index in range(len(lines)):
+        max_stop = min(len(lines), start_index + MAX_WINDOW_LINES)
+        for stop_index in range(start_index + 1, max_stop + 1):
+            start_line = start_index + 1
+            stop_line = stop_index
+            changed = sorted(
+                line for line in targets if start_line <= line <= stop_line
+            )
+            if not changed:
+                continue
+            yield changed[0], " ".join(lines[start_index:stop_index])
 
 
 def scan_file(
@@ -230,38 +276,20 @@ def scan_file(
     if not targets:
         return []
 
-    normalized = raw_text.replace("\n", " ")
-    starts = _line_starts(raw_text)
     findings: set[Finding] = set()
+    for report_line, window in _bounded_windows(lines, targets):
+        for rule_id, category, pattern in PATTERNS:
+            if pattern.search(window):
+                findings.add((path, report_line, rule_id, category))
 
-    def record_matches(pattern: re.Pattern[str], rule_id: str, category: str) -> None:
-        for match in pattern.finditer(normalized):
-            start_line = _line_for_offset(starts, match.start())
-            end_offset = max(match.start(), match.end() - 1)
-            end_line = _line_for_offset(starts, end_offset)
-            changed_lines = sorted(
-                line for line in targets if start_line <= line <= end_line
-            )
-            if changed_lines:
-                findings.add((path, changed_lines[0], rule_id, category))
-
-    for rule_id, category, pattern in PATTERNS:
-        record_matches(pattern, rule_id, category)
-
-    for match in UNCERTAIN.finditer(normalized):
-        start_line = _line_for_offset(starts, match.start())
-        end_offset = max(match.start(), match.end() - 1)
-        end_line = _line_for_offset(starts, end_offset)
-        changed_lines = sorted(
-            line for line in targets if start_line <= line <= end_line
-        )
-        if not changed_lines:
-            continue
-        context_start = starts[start_line - 1]
-        context_end = starts[end_line] if end_line < len(starts) else len(normalized)
-        if not BENIGN_UNCERTAIN.search(normalized[context_start:context_end]):
+        if UNCERTAIN.search(window) and not BENIGN_UNCERTAIN.search(window):
             findings.add(
-                (path, changed_lines[0], "PDS005", "possible-model-directed-instruction")
+                (
+                    path,
+                    report_line,
+                    "PDS005",
+                    "possible-model-directed-instruction",
+                )
             )
 
     return sorted(findings, key=lambda finding: (finding[1], finding[2], finding[3]))
@@ -284,7 +312,11 @@ def main() -> int:
 
     findings: list[Finding] = []
     for path in files:
-        line_numbers = None if added_lines is None else sorted(added_lines.get(path, set()))
+        line_numbers = (
+            None
+            if added_lines is None
+            else sorted(added_lines.get(path, set()))
+        )
         findings.extend(scan_file(path, line_numbers))
 
     if findings:
