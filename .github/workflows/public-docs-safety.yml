@@ -16,6 +16,11 @@ on:
       - website/**
       - public/**
       - .github/CODEOWNERS
+      - .github/pull_request_template.md
+      - .github/PULL_REQUEST_TEMPLATE/**
+      - .github/pull_request_template/**
+      - .github/ISSUE_TEMPLATE/**
+      - .github/issue_template/**
       - .github/workflows/public-docs-safety.yml
       - scripts/public_docs_safety.py
       - tests/test_public_docs_safety.py
