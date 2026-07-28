@@ -103,13 +103,20 @@ Finding = tuple[str, int, str, str]
 Line = tuple[int, str]
 Record = list[Line]
 
-_MARKDOWN_FENCE = re.compile(r"^\s*(```+|~~~+)")
+_MARKDOWN_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+_ASCIIDOC_SOURCE_ATTR = re.compile(
+    r"^\s*\[(?:source|listing)(?:,[^\]]*)?\]\s*$",
+    re.IGNORECASE,
+)
+_ASCIIDOC_FENCE = re.compile(r"^\s*(----+|\.\.\.\.+)\s*$")
 _MARKUP_HEADING = re.compile(
     r"^\s*(?:#{1,6}\s+|={1,6}\s+|\.\.\s+\S|:[A-Za-z0-9_-]+:)"
 )
 _MARKUP_LIST = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
 _MARKUP_RULE = re.compile(r"^\s*(?:[-*_]\s*){3,}$")
 _MARKUP_TABLE = re.compile(r"^\s*(?:\|.*\||\+[-+=+]+\+)\s*$")
+_CODE_CONTINUATION_END = re.compile(r"(?:&&|\|\||\||\^)$")
+_CODE_CONTINUATION_START = re.compile(r"^\s*(?:&&|\|\||\|)\s+")
 _HTML_BLOCK_TAGS = {
     "address",
     "article",
@@ -373,33 +380,99 @@ def _line_records(lines: list[str]) -> list[Record]:
     return [[(number, text)] for number, text in enumerate(lines, start=1) if text.strip()]
 
 
-def _markup_records(lines: list[str]) -> list[Record]:
-    """Split Markdown, RST, and AsciiDoc into structural records."""
+def _has_unescaped_trailing_backslash(text: str) -> bool:
+    stripped = text.rstrip()
+    trailing = len(stripped) - len(stripped.rstrip("\\"))
+    return trailing % 2 == 1
+
+
+def _continues_code_line(text: str) -> bool:
+    stripped = text.rstrip()
+    return bool(
+        stripped
+        and (
+            _has_unescaped_trailing_backslash(stripped)
+            or _CODE_CONTINUATION_END.search(stripped)
+        )
+    )
+
+
+def _append_code_line(records: list[Record], current: Record, line: Line) -> Record:
+    """Group only explicit command continuations inside source blocks."""
+    _, text = line
+    if not text.strip():
+        return _flush_record(records, current)
+    if current and not (
+        _continues_code_line(current[-1][1])
+        or _CODE_CONTINUATION_START.match(text)
+    ):
+        current = _flush_record(records, current)
+    current.append(line)
+    return current
+
+
+def _markup_records(lines: list[str], *, asciidoc: bool = False) -> list[Record]:
+    """Split Markdown, RST, and AsciiDoc into structural records.
+
+    Source blocks are scanned, but independent commands remain separate records.
+    Only explicit shell-style continuations may span multiple physical lines.
+    """
     records: list[Record] = []
     current: Record = []
-    fence_marker: str | None = None
+    markdown_fence: tuple[str, int] | None = None
+    asciidoc_fence: str | None = None
+    pending_asciidoc_source = False
     current_kind = "paragraph"
 
     for number, text in enumerate(lines, start=1):
         stripped = text.strip()
-        if not stripped:
+
+        if markdown_fence:
+            marker_char, marker_len = markdown_fence
+            close = re.match(rf"^\s*{re.escape(marker_char)}{{{marker_len},}}\s*$", text)
+            if close:
+                current = _flush_record(records, current)
+                markdown_fence = None
+                current_kind = "paragraph"
+            else:
+                current = _append_code_line(records, current, (number, text))
+            continue
+
+        if asciidoc_fence:
+            if stripped == asciidoc_fence:
+                current = _flush_record(records, current)
+                asciidoc_fence = None
+                current_kind = "paragraph"
+            else:
+                current = _append_code_line(records, current, (number, text))
+            continue
+
+        markdown_open = _MARKDOWN_FENCE.match(text)
+        if markdown_open:
             current = _flush_record(records, current)
+            marker = markdown_open.group(1)
+            markdown_fence = (marker[0], len(marker))
+            current_kind = "fence"
+            continue
+
+        if asciidoc and _ASCIIDOC_SOURCE_ATTR.match(text):
+            current = _flush_record(records, current)
+            pending_asciidoc_source = True
             current_kind = "paragraph"
             continue
 
-        fence = _MARKDOWN_FENCE.match(text)
-        if fence_marker:
-            current.append((number, text))
-            if fence and fence.group(1).startswith(fence_marker):
-                current = _flush_record(records, current)
-                fence_marker = None
-                current_kind = "paragraph"
-            continue
-        if fence:
+        if pending_asciidoc_source:
+            asciidoc_open = _ASCIIDOC_FENCE.match(text)
+            if asciidoc_open:
+                asciidoc_fence = asciidoc_open.group(1)
+                pending_asciidoc_source = False
+                current_kind = "fence"
+                continue
+            pending_asciidoc_source = False
+
+        if not stripped:
             current = _flush_record(records, current)
-            fence_marker = fence.group(1)[:3]
-            current = [(number, text)]
-            current_kind = "fence"
+            current_kind = "paragraph"
             continue
 
         is_heading = bool(_MARKUP_HEADING.match(text))
@@ -523,13 +596,16 @@ def _html_records(raw_text: str) -> list[Record]:
 def structural_records(path: str, raw_text: str) -> list[Record]:
     candidate = Path(path)
     normalized = candidate.as_posix().lower()
+    suffix = candidate.suffix.lower()
     lines = raw_text.splitlines()
 
     if normalized == ".github/codeowners":
         return _line_records(lines)
-    if candidate.suffix.lower() in {".html", ".htm"}:
+    if suffix in {".html", ".htm"}:
         return _html_records(raw_text)
-    if candidate.suffix.lower() in {".md", ".mdx", ".rst", ".adoc", ".asciidoc"}:
+    if suffix in {".adoc", ".asciidoc"}:
+        return _markup_records(lines, asciidoc=True)
+    if suffix in {".md", ".mdx", ".rst"}:
         return _markup_records(lines)
     if _is_readme_name(candidate.name) or candidate.name.lower() in DOC_NAMES:
         return _markup_records(lines)
