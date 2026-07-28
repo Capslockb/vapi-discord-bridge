@@ -35,6 +35,8 @@ class PublicTemplateDocsSafetyTests(unittest.TestCase):
             "docs/PULL_REQUEST_TEMPLATE.md",
             "docs/pull_request_template/security.md",
             ".github/PULL_REQUEST_TEMPLATE.md",
+            ".github/PULL_REQUEST_TEMPLATE.rst",
+            ".github/pull_request_template.adoc",
             ".github/pull_request_template/security.md",
         ]
         for path in protected:
@@ -76,6 +78,8 @@ class PublicTemplateDocsSafetyTests(unittest.TestCase):
             "docs/pull_request_template.*",
             "docs/PULL_REQUEST_TEMPLATE/**",
             "docs/pull_request_template/**",
+            ".github/PULL_REQUEST_TEMPLATE.*",
+            ".github/pull_request_template.*",
         ]
         for path in expected:
             with self.subTest(path=path):
