@@ -5,6 +5,8 @@
 /SECURITY.md @Capslockb
 /CONTRIBUTING.md @Capslockb
 /CODE_OF_CONDUCT.md @Capslockb
+/SUPPORT.md @Capslockb
+/GOVERNANCE.md @Capslockb
 /AGENTS.md @Capslockb
 **/AGENTS.md @Capslockb
 /PULL_REQUEST_TEMPLATE.* @Capslockb
@@ -15,11 +17,15 @@
 /docs/pull_request_template.* @Capslockb
 /docs/PULL_REQUEST_TEMPLATE/** @Capslockb
 /docs/pull_request_template/** @Capslockb
+/docs/SUPPORT.md @Capslockb
+/docs/GOVERNANCE.md @Capslockb
 /docs/** @Capslockb
 /doc/** @Capslockb
 /website/** @Capslockb
 /site/** @Capslockb
 /public/** @Capslockb
+/.github/SUPPORT.md @Capslockb
+/.github/GOVERNANCE.md @Capslockb
 /.github/PULL_REQUEST_TEMPLATE.* @Capslockb
 /.github/pull_request_template.* @Capslockb
 /.github/pull_request_template.md @Capslockb
@@ -32,7 +38,9 @@
 /.github/CODEOWNERS @Capslockb
 /.github/workflows/public-docs-safety.yml @Capslockb
 /scripts/public_docs_safety.py @Capslockb
+/scripts/public_community_docs_safety.py @Capslockb
 /scripts/public_template_docs_safety.py @Capslockb
 /tests/test_public_docs_safety.py @Capslockb
+/tests/test_public_community_docs_safety.py @Capslockb
 /tests/test_public_template_docs_safety.py @Capslockb
 /tests/fixtures/public-docs/** @Capslockb
