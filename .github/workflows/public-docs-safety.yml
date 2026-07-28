@@ -1,0 +1,86 @@
+name: public-docs-safety
+
+on:
+  pull_request: {}
+  push:
+    branches: [ main, master, release/** ]
+    paths:
+      - '*'
+      - .github/**
+      - README
+      - README.*
+      - '**/README'
+      - '**/README.*'
+      - SECURITY.md
+      - CONTRIBUTING.md
+      - CODE_OF_CONDUCT.md
+      - SUPPORT.md
+      - Support.md
+      - support.md
+      - GOVERNANCE.md
+      - Governance.md
+      - governance.md
+      - AGENTS.md
+      - PULL_REQUEST_TEMPLATE.*
+      - pull_request_template.*
+      - PULL_REQUEST_TEMPLATE/**
+      - pull_request_template/**
+      - docs/PULL_REQUEST_TEMPLATE.*
+      - docs/pull_request_template.*
+      - docs/PULL_REQUEST_TEMPLATE/**
+      - docs/pull_request_template/**
+      - docs/SUPPORT.md
+      - docs/Support.md
+      - docs/support.md
+      - docs/GOVERNANCE.md
+      - docs/Governance.md
+      - docs/governance.md
+      - docs/**
+      - doc/**
+      - site/**
+      - website/**
+      - public/**
+      - .github/CODEOWNERS
+      - .github/SUPPORT.md
+      - .github/Support.md
+      - .github/support.md
+      - .github/GOVERNANCE.md
+      - .github/Governance.md
+      - .github/governance.md
+      - .github/PULL_REQUEST_TEMPLATE.*
+      - .github/pull_request_template.*
+      - .github/pull_request_template.md
+      - .github/ISSUE_TEMPLATE.md
+      - .github/issue_template.md
+      - .github/PULL_REQUEST_TEMPLATE/**
+      - .github/pull_request_template/**
+      - .github/ISSUE_TEMPLATE/**
+      - .github/issue_template/**
+      - .github/workflows/public-docs-safety.yml
+      - scripts/public_docs_safety.py
+      - scripts/public_community_docs_safety.py
+      - scripts/public_template_docs_safety.py
+      - tests/test_public_docs_safety.py
+      - tests/test_public_community_docs_safety.py
+      - tests/test_public_template_docs_safety.py
+      - tests/fixtures/public-docs/**
+
+jobs:
+  public-docs-safety:
+    name: public-docs-safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: public-docs-safety
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          python3 scripts/public_community_docs_safety.py
+          python3 scripts/public_template_docs_safety.py
+      - name: adversarial fixture test
+        run: python3 -m unittest discover -s tests -p 'test_public*_safety.py' -v
