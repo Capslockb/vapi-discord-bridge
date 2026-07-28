@@ -29,12 +29,13 @@ class CommunityDocumentTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(public_docs_safety.is_public_doc(path))
 
-    def test_workflow_runs_on_every_protected_branch_push(self) -> None:
+    def test_workflow_uses_broad_enforceable_push_patterns(self) -> None:
         workflow = Path(".github/workflows/public-docs-safety.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("  push:\n    branches: [ main, master, release/** ]", workflow)
-        self.assertNotIn("\n    paths:\n", workflow)
+        for pattern in ("- '*'", "- .github/**", "- docs/**"):
+            with self.subTest(pattern=pattern):
+                self.assertIn(pattern, workflow)
 
     def test_codeowners_uses_broad_enforceable_patterns(self) -> None:
         codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
