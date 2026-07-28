@@ -29,6 +29,7 @@ on:
       - .github/CODEOWNERS
       - .github/PULL_REQUEST_TEMPLATE.*
       - .github/pull_request_template.*
+      - .github/pull_request_template.md
       - .github/ISSUE_TEMPLATE.md
       - .github/issue_template.md
       - .github/PULL_REQUEST_TEMPLATE/**
