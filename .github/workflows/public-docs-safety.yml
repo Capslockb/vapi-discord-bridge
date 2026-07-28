@@ -4,6 +4,66 @@ on:
   pull_request: {}
   push:
     branches: [ main, master, release/** ]
+    paths:
+      - '*'
+      - .github/**
+      - README
+      - README.*
+      - '**/README'
+      - '**/README.*'
+      - SECURITY.md
+      - CONTRIBUTING.md
+      - CODE_OF_CONDUCT.md
+      - SUPPORT.md
+      - Support.md
+      - support.md
+      - GOVERNANCE.md
+      - Governance.md
+      - governance.md
+      - AGENTS.md
+      - PULL_REQUEST_TEMPLATE.*
+      - pull_request_template.*
+      - PULL_REQUEST_TEMPLATE/**
+      - pull_request_template/**
+      - docs/PULL_REQUEST_TEMPLATE.*
+      - docs/pull_request_template.*
+      - docs/PULL_REQUEST_TEMPLATE/**
+      - docs/pull_request_template/**
+      - docs/SUPPORT.md
+      - docs/Support.md
+      - docs/support.md
+      - docs/GOVERNANCE.md
+      - docs/Governance.md
+      - docs/governance.md
+      - docs/**
+      - doc/**
+      - site/**
+      - website/**
+      - public/**
+      - .github/CODEOWNERS
+      - .github/SUPPORT.md
+      - .github/Support.md
+      - .github/support.md
+      - .github/GOVERNANCE.md
+      - .github/Governance.md
+      - .github/governance.md
+      - .github/PULL_REQUEST_TEMPLATE.*
+      - .github/pull_request_template.*
+      - .github/pull_request_template.md
+      - .github/ISSUE_TEMPLATE.md
+      - .github/issue_template.md
+      - .github/PULL_REQUEST_TEMPLATE/**
+      - .github/pull_request_template/**
+      - .github/ISSUE_TEMPLATE/**
+      - .github/issue_template/**
+      - .github/workflows/public-docs-safety.yml
+      - scripts/public_docs_safety.py
+      - scripts/public_community_docs_safety.py
+      - scripts/public_template_docs_safety.py
+      - tests/test_public_docs_safety.py
+      - tests/test_public_community_docs_safety.py
+      - tests/test_public_template_docs_safety.py
+      - tests/fixtures/public-docs/**
 
 jobs:
   public-docs-safety:
