@@ -20,7 +20,8 @@
 /website/** @Capslockb
 /site/** @Capslockb
 /public/** @Capslockb
-/.github/pull_request_template.md @Capslockb
+/.github/PULL_REQUEST_TEMPLATE.* @Capslockb
+/.github/pull_request_template.* @Capslockb
 /.github/ISSUE_TEMPLATE.md @Capslockb
 /.github/issue_template.md @Capslockb
 /.github/PULL_REQUEST_TEMPLATE/** @Capslockb
