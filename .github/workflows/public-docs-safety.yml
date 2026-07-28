@@ -6,8 +6,9 @@ on:
     branches: [ main, master, release/** ]
     paths:
       - README
+      - README.*
       - '**/README'
-      - README.md
+      - '**/README.*'
       - SECURITY.md
       - CONTRIBUTING.md
       - CODE_OF_CONDUCT.md
@@ -19,6 +20,8 @@ on:
       - public/**
       - .github/CODEOWNERS
       - .github/pull_request_template.md
+      - .github/ISSUE_TEMPLATE.md
+      - .github/issue_template.md
       - .github/PULL_REQUEST_TEMPLATE/**
       - .github/pull_request_template/**
       - .github/ISSUE_TEMPLATE/**
