@@ -7,6 +7,14 @@
 /CODE_OF_CONDUCT.md @Capslockb
 /AGENTS.md @Capslockb
 **/AGENTS.md @Capslockb
+/PULL_REQUEST_TEMPLATE.* @Capslockb
+/pull_request_template.* @Capslockb
+/PULL_REQUEST_TEMPLATE/** @Capslockb
+/pull_request_template/** @Capslockb
+/docs/PULL_REQUEST_TEMPLATE.* @Capslockb
+/docs/pull_request_template.* @Capslockb
+/docs/PULL_REQUEST_TEMPLATE/** @Capslockb
+/docs/pull_request_template/** @Capslockb
 /docs/** @Capslockb
 /doc/** @Capslockb
 /website/** @Capslockb
@@ -22,5 +30,7 @@
 /.github/CODEOWNERS @Capslockb
 /.github/workflows/public-docs-safety.yml @Capslockb
 /scripts/public_docs_safety.py @Capslockb
+/scripts/public_template_docs_safety.py @Capslockb
 /tests/test_public_docs_safety.py @Capslockb
+/tests/test_public_template_docs_safety.py @Capslockb
 /tests/fixtures/public-docs/** @Capslockb
