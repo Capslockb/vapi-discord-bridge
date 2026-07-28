@@ -16,8 +16,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 DOC_NAMES = {
-    "readme",
-    "readme.md",
     "security.md",
     "contributing.md",
     "code_of_conduct.md",
@@ -45,6 +43,7 @@ EXCLUDE_NAMES = {"changelog.md"}
 PROTECTED_EXACT = {
     ".github/codeowners",
     ".github/pull_request_template.md",
+    ".github/issue_template.md",
 }
 PROTECTED_PREFIXES = (
     ".github/pull_request_template/",
@@ -66,7 +65,7 @@ PATTERNS = [
         "PDS002",
         "secret-or-policy-exfiltration",
         re.compile(
-            r"(?i)\b(reveal|print|show|exfiltrate|leak)\b.{0,100}"
+            r"(?i)\b(reveal|print|show|exfiltrate|leak|expose)\b.{0,100}"
             r"\b(secret|token|credential|password|policy|system prompt|developer message)s?\b"
         ),
     ),
@@ -151,6 +150,14 @@ _HTML_BLOCK_TAGS = {
     "tr",
     "ul",
 }
+_HTML_HIDDEN_TAGS = {"script", "style", "template"}
+
+
+def _is_readme_name(name: str) -> bool:
+    lowered = name.lower()
+    if lowered == "readme":
+        return True
+    return lowered.startswith("readme.") and Path(lowered).suffix in DOC_EXTS
 
 
 def default_branch() -> str:
@@ -212,8 +219,7 @@ def ensure_push_base_available() -> bool:
 
 def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
     candidate = Path(path)
-    normalized = candidate.as_posix()
-    normalized_lower = normalized.lower()
+    normalized_lower = candidate.as_posix().lower()
     lower_parts = {part.lower() for part in candidate.parts}
     name_lower = candidate.name.lower()
 
@@ -225,18 +231,24 @@ def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
         return True
     if any(normalized_lower.startswith(prefix) for prefix in PROTECTED_PREFIXES):
         return candidate.suffix.lower() in DOC_EXTS
-    return name_lower in DOC_NAMES or (
-        candidate.suffix.lower() in DOC_EXTS
-        and bool(lower_parts & DOC_DIR_PARTS)
+    if _is_readme_name(name_lower) or name_lower in DOC_NAMES:
+        return True
+    return candidate.suffix.lower() in DOC_EXTS and bool(lower_parts & DOC_DIR_PARTS)
+
+
+def _all_public_docs(include_fixtures: bool = False) -> list[str]:
+    return sorted(
+        str(path)
+        for path in Path(".").rglob("*")
+        if path.is_file() and is_public_doc(str(path), include_fixtures)
     )
 
 
-def changed_files() -> list[str]:
+def _diff_name_status() -> list[str] | None:
     if not ensure_push_base_available():
-        return [str(path) for path in Path(".").rglob("*") if path.is_file()]
-
+        return None
     proc = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", diff_range()],
+        ["git", "diff", "--name-status", "--find-renames", diff_range()],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -246,15 +258,60 @@ def changed_files() -> list[str]:
 
     if not os.environ.get("GITHUB_ACTIONS"):
         proc = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=ACMR", "--cached"],
+            ["git", "diff", "--name-status", "--find-renames", "--cached"],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
         if proc.returncode == 0:
             return [line for line in proc.stdout.splitlines() if line]
+    return None
 
-    return [str(path) for path in Path(".").rglob("*") if path.is_file()]
+
+def changed_selection() -> tuple[list[str], set[str]]:
+    """Return current paths to inspect and paths that require complete scanning.
+
+    Deleting or renaming a public document can expose an unchanged lower-precedence
+    public surface. In that case, scan the complete remaining public-document set.
+    """
+    status_lines = _diff_name_status()
+    if status_lines is None:
+        all_docs = _all_public_docs()
+        return all_docs, set(all_docs)
+
+    selected: set[str] = set()
+    precedence_changed = False
+    for row in status_lines:
+        fields = row.split("\t")
+        status = fields[0]
+        code = status[:1]
+        old_path: str | None = None
+        new_path: str | None = None
+
+        if code in {"R", "C"} and len(fields) >= 3:
+            old_path, new_path = fields[1], fields[2]
+        elif len(fields) >= 2:
+            new_path = fields[1]
+            if code == "D":
+                old_path, new_path = new_path, None
+
+        if new_path and Path(new_path).is_file():
+            selected.add(new_path)
+        if code in {"D", "R"} and old_path and is_public_doc(old_path):
+            precedence_changed = True
+
+    full_scan: set[str] = set()
+    if precedence_changed:
+        remaining = _all_public_docs()
+        selected.update(remaining)
+        full_scan.update(remaining)
+
+    return sorted(selected), full_scan
+
+
+def changed_files() -> list[str]:
+    files, _ = changed_selection()
+    return files
 
 
 def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
@@ -388,12 +445,13 @@ def _markup_records(lines: list[str]) -> list[Record]:
 
 
 class _HTMLRecordParser(HTMLParser):
-    """Collect text into block-aware records while preserving source line numbers."""
+    """Collect visible prose and comments into bounded source-aware records."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.records: list[Record] = []
         self.current: Record = []
+        self.hidden_depth = 0
 
     def _flush(self) -> None:
         if self.current:
@@ -401,22 +459,54 @@ class _HTMLRecordParser(HTMLParser):
             self.current = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() in _HTML_BLOCK_TAGS:
+        lowered = tag.lower()
+        if lowered in _HTML_HIDDEN_TAGS:
+            self._flush()
+            self.hidden_depth += 1
+            return
+        if self.hidden_depth:
+            return
+        if lowered in _HTML_BLOCK_TAGS:
             self._flush()
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() in _HTML_BLOCK_TAGS:
+        lowered = tag.lower()
+        if self.hidden_depth or lowered in _HTML_HIDDEN_TAGS:
+            return
+        if lowered in _HTML_BLOCK_TAGS:
             self._flush()
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in _HTML_BLOCK_TAGS:
+        lowered = tag.lower()
+        if lowered in _HTML_HIDDEN_TAGS:
+            if self.hidden_depth:
+                self.hidden_depth -= 1
+            self._flush()
+            return
+        if self.hidden_depth:
+            return
+        if lowered in _HTML_BLOCK_TAGS:
             self._flush()
 
     def handle_data(self, data: str) -> None:
+        if self.hidden_depth:
+            return
         start_line = self.getpos()[0]
         for offset, text in enumerate(data.splitlines()):
             if text.strip():
                 self.current.append((start_line + offset, text))
+
+    def handle_comment(self, data: str) -> None:
+        if self.hidden_depth:
+            return
+        self._flush()
+        start_line = self.getpos()[0]
+        comment: Record = []
+        for offset, text in enumerate(data.splitlines()):
+            if text.strip():
+                comment.append((start_line + offset, text))
+        if comment:
+            self.records.append(comment)
 
     def close(self) -> None:
         super().close()
@@ -441,7 +531,7 @@ def structural_records(path: str, raw_text: str) -> list[Record]:
         return _html_records(raw_text)
     if candidate.suffix.lower() in {".md", ".mdx", ".rst", ".adoc", ".asciidoc"}:
         return _markup_records(lines)
-    if candidate.name.lower() in DOC_NAMES:
+    if _is_readme_name(candidate.name) or candidate.name.lower() in DOC_NAMES:
         return _markup_records(lines)
     return _paragraph_records(lines)
 
@@ -471,8 +561,8 @@ def scan_file(
     line_numbers: Iterable[int] | None,
 ) -> list[Finding]:
     try:
-        raw_text = Path(path).read_text(encoding="utf-8", errors="ignore")
-    except OSError:
+        raw_text = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
         return [(path, 1, "PDS900", "read-failure")]
 
     lines = raw_text.splitlines()
@@ -512,11 +602,12 @@ def main() -> int:
     args = parser.parse_args()
 
     include_fixtures = args.include_test_fixtures or args.all
-    candidates = (
-        [str(path) for path in Path(".").rglob("*") if path.is_file()]
-        if args.all
-        else changed_files()
-    )
+    if args.all:
+        candidates = [str(path) for path in Path(".").rglob("*") if path.is_file()]
+        full_scan = set(candidates)
+    else:
+        candidates, full_scan = changed_selection()
+
     files = [path for path in candidates if is_public_doc(path, include_fixtures)]
     added_lines = None if args.all else changed_added_lines(files)
 
@@ -524,7 +615,7 @@ def main() -> int:
     for path in files:
         line_numbers = (
             None
-            if added_lines is None
+            if added_lines is None or path in full_scan
             else sorted(added_lines.get(path, set()))
         )
         findings.extend(scan_file(path, line_numbers))
