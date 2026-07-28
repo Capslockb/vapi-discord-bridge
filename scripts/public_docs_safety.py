@@ -12,14 +12,16 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
+from html.parser import HTMLParser
 from pathlib import Path
 
 DOC_NAMES = {
-    "README.md",
-    "SECURITY.md",
-    "CONTRIBUTING.md",
-    "CODE_OF_CONDUCT.md",
-    "AGENTS.md",
+    "readme",
+    "readme.md",
+    "security.md",
+    "contributing.md",
+    "code_of_conduct.md",
+    "agents.md",
 }
 DOC_DIR_PARTS = {"docs", "doc", "website", "site", "public"}
 DOC_EXTS = {
@@ -39,7 +41,7 @@ EXCLUDE_PARTS = {
     "sessions",
     "vendor",
 }
-EXCLUDE_NAMES = {"CHANGELOG.md"}
+EXCLUDE_NAMES = {"changelog.md"}
 PROTECTED_EXACT = {
     ".github/codeowners",
     ".github/pull_request_template.md",
@@ -99,6 +101,56 @@ BENIGN_UNCERTAIN = re.compile(
 )
 
 Finding = tuple[str, int, str, str]
+Line = tuple[int, str]
+Record = list[Line]
+
+_MARKDOWN_FENCE = re.compile(r"^\s*(```+|~~~+)")
+_MARKUP_HEADING = re.compile(
+    r"^\s*(?:#{1,6}\s+|={1,6}\s+|\.\.\s+\S|:[A-Za-z0-9_-]+:)"
+)
+_MARKUP_LIST = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
+_MARKUP_RULE = re.compile(r"^\s*(?:[-*_]\s*){3,}$")
+_MARKUP_TABLE = re.compile(r"^\s*(?:\|.*\||\+[-+=+]+\+)\s*$")
+_HTML_BLOCK_TAGS = {
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "body",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "html",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+}
 
 
 def default_branch() -> str:
@@ -163,8 +215,9 @@ def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
     normalized = candidate.as_posix()
     normalized_lower = normalized.lower()
     lower_parts = {part.lower() for part in candidate.parts}
+    name_lower = candidate.name.lower()
 
-    if lower_parts & EXCLUDE_PARTS or candidate.name in EXCLUDE_NAMES:
+    if lower_parts & EXCLUDE_PARTS or name_lower in EXCLUDE_NAMES:
         return False
     if include_fixtures and normalized_lower.startswith(FIXTURE_PREFIX):
         return candidate.suffix.lower() in DOC_EXTS
@@ -172,7 +225,7 @@ def is_public_doc(path: str, include_fixtures: bool = False) -> bool:
         return True
     if any(normalized_lower.startswith(prefix) for prefix in PROTECTED_PREFIXES):
         return candidate.suffix.lower() in DOC_EXTS
-    return candidate.name in DOC_NAMES or (
+    return name_lower in DOC_NAMES or (
         candidate.suffix.lower() in DOC_EXTS
         and bool(lower_parts & DOC_DIR_PARTS)
     )
@@ -241,22 +294,176 @@ def changed_added_lines(files: list[str]) -> dict[str, set[int]] | None:
     return output
 
 
+def _flush_record(records: list[Record], current: Record) -> Record:
+    if current:
+        records.append(current)
+    return []
+
+
+def _paragraph_records(lines: list[str]) -> list[Record]:
+    records: list[Record] = []
+    current: Record = []
+    for number, text in enumerate(lines, start=1):
+        if not text.strip():
+            current = _flush_record(records, current)
+            continue
+        current.append((number, text))
+    _flush_record(records, current)
+    return records
+
+
+def _line_records(lines: list[str]) -> list[Record]:
+    return [[(number, text)] for number, text in enumerate(lines, start=1) if text.strip()]
+
+
+def _markup_records(lines: list[str]) -> list[Record]:
+    """Split Markdown, RST, and AsciiDoc into structural records."""
+    records: list[Record] = []
+    current: Record = []
+    fence_marker: str | None = None
+    current_kind = "paragraph"
+
+    for number, text in enumerate(lines, start=1):
+        stripped = text.strip()
+        if not stripped:
+            current = _flush_record(records, current)
+            current_kind = "paragraph"
+            continue
+
+        fence = _MARKDOWN_FENCE.match(text)
+        if fence_marker:
+            current.append((number, text))
+            if fence and fence.group(1).startswith(fence_marker):
+                current = _flush_record(records, current)
+                fence_marker = None
+                current_kind = "paragraph"
+            continue
+        if fence:
+            current = _flush_record(records, current)
+            fence_marker = fence.group(1)[:3]
+            current = [(number, text)]
+            current_kind = "fence"
+            continue
+
+        is_heading = bool(_MARKUP_HEADING.match(text))
+        is_rule = bool(_MARKUP_RULE.match(text))
+        is_list = bool(_MARKUP_LIST.match(text))
+        is_quote = stripped.startswith(">")
+        is_table = bool(_MARKUP_TABLE.match(text))
+
+        if is_heading or is_rule:
+            current = _flush_record(records, current)
+            records.append([(number, text)])
+            current_kind = "paragraph"
+            continue
+
+        if is_list:
+            current = _flush_record(records, current)
+            current = [(number, text)]
+            current_kind = "list"
+            continue
+
+        if is_quote:
+            if current_kind != "quote":
+                current = _flush_record(records, current)
+                current_kind = "quote"
+            current.append((number, text))
+            continue
+
+        if is_table:
+            if current_kind != "table":
+                current = _flush_record(records, current)
+                current_kind = "table"
+            current.append((number, text))
+            continue
+
+        if current_kind in {"quote", "table"}:
+            current = _flush_record(records, current)
+            current_kind = "paragraph"
+
+        current.append((number, text))
+
+    _flush_record(records, current)
+    return records
+
+
+class _HTMLRecordParser(HTMLParser):
+    """Collect text into block-aware records while preserving source line numbers."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.records: list[Record] = []
+        self.current: Record = []
+
+    def _flush(self) -> None:
+        if self.current:
+            self.records.append(self.current)
+            self.current = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in _HTML_BLOCK_TAGS:
+            self._flush()
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in _HTML_BLOCK_TAGS:
+            self._flush()
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in _HTML_BLOCK_TAGS:
+            self._flush()
+
+    def handle_data(self, data: str) -> None:
+        start_line = self.getpos()[0]
+        for offset, text in enumerate(data.splitlines()):
+            if text.strip():
+                self.current.append((start_line + offset, text))
+
+    def close(self) -> None:
+        super().close()
+        self._flush()
+
+
+def _html_records(raw_text: str) -> list[Record]:
+    parser = _HTMLRecordParser()
+    parser.feed(raw_text)
+    parser.close()
+    return parser.records
+
+
+def structural_records(path: str, raw_text: str) -> list[Record]:
+    candidate = Path(path)
+    normalized = candidate.as_posix().lower()
+    lines = raw_text.splitlines()
+
+    if normalized == ".github/codeowners":
+        return _line_records(lines)
+    if candidate.suffix.lower() in {".html", ".htm"}:
+        return _html_records(raw_text)
+    if candidate.suffix.lower() in {".md", ".mdx", ".rst", ".adoc", ".asciidoc"}:
+        return _markup_records(lines)
+    if candidate.name.lower() in DOC_NAMES:
+        return _markup_records(lines)
+    return _paragraph_records(lines)
+
+
 def _bounded_windows(
-    lines: list[str],
+    records: list[Record],
     targets: set[int],
 ) -> Iterator[tuple[int, str]]:
-    """Yield one-to-three-line windows containing at least one target line."""
-    for start_index in range(len(lines)):
-        max_stop = min(len(lines), start_index + MAX_WINDOW_LINES)
-        for stop_index in range(start_index + 1, max_stop + 1):
-            start_line = start_index + 1
-            stop_line = stop_index
-            changed = sorted(
-                line for line in targets if start_line <= line <= stop_line
-            )
-            if not changed:
-                continue
-            yield changed[0], " ".join(lines[start_index:stop_index])
+    """Yield one-to-three-line windows within one structural record."""
+    for record in records:
+        for start_index in range(len(record)):
+            max_stop = min(len(record), start_index + MAX_WINDOW_LINES)
+            for stop_index in range(start_index + 1, max_stop + 1):
+                window_lines = record[start_index:stop_index]
+                changed = sorted(
+                    line_number
+                    for line_number, _ in window_lines
+                    if line_number in targets
+                )
+                if not changed:
+                    continue
+                yield changed[0], " ".join(text for _, text in window_lines)
 
 
 def scan_file(
@@ -277,7 +484,10 @@ def scan_file(
         return []
 
     findings: set[Finding] = set()
-    for report_line, window in _bounded_windows(lines, targets):
+    for report_line, window in _bounded_windows(
+        structural_records(path, raw_text),
+        targets,
+    ):
         for rule_id, category, pattern in PATTERNS:
             if pattern.search(window):
                 findings.add((path, report_line, rule_id, category))
