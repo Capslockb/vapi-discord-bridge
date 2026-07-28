@@ -27,7 +27,8 @@ on:
       - website/**
       - public/**
       - .github/CODEOWNERS
-      - .github/pull_request_template.md
+      - .github/PULL_REQUEST_TEMPLATE.*
+      - .github/pull_request_template.*
       - .github/ISSUE_TEMPLATE.md
       - .github/issue_template.md
       - .github/PULL_REQUEST_TEMPLATE/**
