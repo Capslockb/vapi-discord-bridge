@@ -12,6 +12,8 @@ on:
       - SECURITY.md
       - CONTRIBUTING.md
       - CODE_OF_CONDUCT.md
+      - SUPPORT.md
+      - GOVERNANCE.md
       - AGENTS.md
       - PULL_REQUEST_TEMPLATE.*
       - pull_request_template.*
@@ -21,12 +23,16 @@ on:
       - docs/pull_request_template.*
       - docs/PULL_REQUEST_TEMPLATE/**
       - docs/pull_request_template/**
+      - docs/SUPPORT.md
+      - docs/GOVERNANCE.md
       - docs/**
       - doc/**
       - site/**
       - website/**
       - public/**
       - .github/CODEOWNERS
+      - .github/SUPPORT.md
+      - .github/GOVERNANCE.md
       - .github/PULL_REQUEST_TEMPLATE.*
       - .github/pull_request_template.*
       - .github/pull_request_template.md
@@ -38,8 +44,10 @@ on:
       - .github/issue_template/**
       - .github/workflows/public-docs-safety.yml
       - scripts/public_docs_safety.py
+      - scripts/public_community_docs_safety.py
       - scripts/public_template_docs_safety.py
       - tests/test_public_docs_safety.py
+      - tests/test_public_community_docs_safety.py
       - tests/test_public_template_docs_safety.py
       - tests/fixtures/public-docs/**
 
@@ -58,7 +66,7 @@ jobs:
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: |
-          python3 scripts/public_docs_safety.py
+          python3 scripts/public_community_docs_safety.py
           python3 scripts/public_template_docs_safety.py
       - name: adversarial fixture test
         run: python3 -m unittest discover -s tests -p 'test_public*_safety.py' -v
