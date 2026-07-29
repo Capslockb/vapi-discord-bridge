@@ -17,10 +17,10 @@ jobs:
           python-version: "3.12"
       - name: compile check
         run: |
-          python3 -m py_compile plugin/bridge.py plugin/__init__.py
-          python3 -m py_compile installer/install.py
-          python3 -m py_compile scripts/post_call_summary.py
+          python -m py_compile plugin/bridge.py plugin/__init__.py
+          python -m py_compile installer/install.py
+          python -m py_compile scripts/post_call_summary.py
+      - name: install yaml lint dependency
+        run: python -m pip install --disable-pip-version-check --no-cache-dir PyYAML==6.0.2
       - name: yaml lint
-        run: |
-          python3 -c "import yaml; yaml.safe_load(open('plugin/plugin.yaml').read())" \
-            || (apt-get update && apt-get install -y python3-yaml && python3 -c "import yaml; yaml.safe_load(open('plugin/plugin.yaml').read())")
+        run: python -c "import yaml; yaml.safe_load(open('plugin/plugin.yaml').read())"
