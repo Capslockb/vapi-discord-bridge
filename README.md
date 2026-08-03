@@ -25,8 +25,10 @@ The installer performs:
 | 2 | Discord bot token and Vapi private-key collection with live validation. |
 | 3 | Copy, symlink, or local installation mode. |
 | 4 | Plugin deployment, permissions, and Python dependency installation. |
-| 5 | Merge selected values into `~/.hermes/.env` with mode `0600`. |
+| 5 | Merge selected values into the selected Hermes home’s `.env` with mode `0600`. |
 | 6 | Optional autostart-file creation. |
+
+**Custom Hermes home warning:** plugin placement and `.env` writing honor `HERMES_HOME`, but the current dependency-install step still probes `~/.hermes/hermes-agent/venv/bin/python`. With a non-default `HERMES_HOME`, it can skip required dependencies or modify an unrelated default venv. Until [Issue #24](https://github.com/Capslockb/vapi-discord-bridge/issues/24) is resolved, use the default Hermes home or install `plugin/requirements.txt` manually through the intended custom venv after verifying the interpreter path.
 
 For a pre-seeded unattended repeat install:
 
