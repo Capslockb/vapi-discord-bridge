@@ -36,7 +36,7 @@ For a pre-seeded unattended repeat install:
 python3 installer/install.py --yes
 ```
 
-`--yes` does not provide required credentials. It currently succeeds only when `DISCORD_BOT_TOKEN` and `VAPI_API_KEY` already exist in `~/.hermes/.env`; on a clean environment it exits during key collection. It also selects copy mode and default confirmation answers automatically. In particular, a failed Discord or Vapi network check is accepted through the default “continue anyway” response, so this mode is not a strict credential-validation gate. Deterministic fail-closed unattended installation is tracked in [Issue #10](https://github.com/Capslockb/vapi-discord-bridge/issues/10).
+`--yes` does not provide required credentials. It currently succeeds only when `DISCORD_BOT_TOKEN` and `VAPI_API_KEY` already exist in the selected Hermes home’s `.env`; on a clean environment it exits during key collection. It also selects copy mode and default confirmation answers automatically. In particular, a failed Discord or Vapi network check is accepted through the default “continue anyway” response, so this mode is not a strict credential-validation gate. Deterministic fail-closed unattended installation is tracked in [Issue #10](https://github.com/Capslockb/vapi-discord-bridge/issues/10).
 
 ### Configuration warning
 
@@ -110,7 +110,7 @@ The bridge runs in process with the Hermes gateway asyncio loop. It does not req
 
 ## Configuration
 
-All settings normally live in `~/.hermes/.env`.
+By default, settings live in `~/.hermes/.env`. When `HERMES_HOME` is set, the installer reads and writes `$HERMES_HOME/.env` instead.
 
 ### Required
 
