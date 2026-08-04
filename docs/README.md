@@ -13,6 +13,7 @@ This directory contains the detailed operator and implementation guides for Vapi
 ## Current support status
 
 - A saved `VAPI_ASSISTANT_ID` is the recommended configuration path. The inline transient-assistant path currently uses an OpenAI provider.
+- A custom `HERMES_HOME` is not yet applied consistently: plugin placement and `.env` handling follow the selected home, while dependency installation and the default autostart path can still target `~/.hermes`. See Issues [#24](https://github.com/Capslockb/vapi-discord-bridge/issues/24) and [#26](https://github.com/Capslockb/vapi-discord-bridge/issues/26).
 - The fixed loopback control port permits one active Vapi sidecar per Hermes gateway process across all Discord guilds. See [Issue #18](https://github.com/Capslockb/vapi-discord-bridge/issues/18).
 - Normal calls do not create the JSONL files required for post-call summaries. See [Issue #2](https://github.com/Capslockb/vapi-discord-bridge/issues/2).
 - The summary helper is not yet packaged with the installed plugin, so summary use currently requires a retained checkout or manual helper copy. See [Issue #19](https://github.com/Capslockb/vapi-discord-bridge/issues/19).
@@ -22,7 +23,7 @@ This directory contains the detailed operator and implementation guides for Vapi
 
 ## Safe operation
 
-- Store Discord and Vapi credentials in `~/.hermes/.env` with restrictive permissions.
+- Store Discord and Vapi credentials in the selected Hermes home’s `.env` with restrictive permissions.
 - Keep the HTTP control listener bound to `127.0.0.1`.
 - Do not start concurrent Vapi bridges from the same gateway process.
 - Do not run this bridge alongside another Discord voice bridge in the same guild.
