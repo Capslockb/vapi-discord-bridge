@@ -21,7 +21,7 @@ The installer performs:
 
 | Step | What happens |
 |------|--------------|
-| 1 | System preflight for Python, Hermes home, venv, git, and `gh`. |
+| 1 | System preflight for Python, Hermes home, venv, git, and the optional `gh` CLI. |
 | 2 | Discord bot token and Vapi private-key collection with live validation. |
 | 3 | Copy, symlink, or local installation mode. |
 | 4 | Plugin deployment, permissions, and Python dependency installation. |
