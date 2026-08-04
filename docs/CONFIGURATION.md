@@ -2,7 +2,7 @@
 
 > Runtime configuration verified against `plugin/bridge.py` and `plugin/__init__.py`.
 
-All settings live in `~/.hermes/.env` unless you inject them through another process environment. Keep the file mode at `0600`. After changing runtime settings, restart the gateway:
+The bridge reads its process environment. A default Hermes installation normally sources settings from `~/.hermes/.env`. When the installer runs with `HERMES_HOME` set, it reads and writes `$HERMES_HOME/.env`; ensure the gateway is configured to load that selected file, or inject the same variables through its service environment. Keep environment files at mode `0600`. After changing runtime settings, restart the gateway:
 
 ```bash
 systemctl --user restart hermes-gateway
@@ -47,6 +47,8 @@ The current installer still collects several keys that the runtime does not cons
 `VAPI_PUBLIC_KEY` is also not used by this headless bridge; it is relevant only to separate client-side Vapi embeds.
 
 Until [Issue #1](https://github.com/Capslockb/vapi-discord-bridge/issues/1) is fixed, configure `VAPI_VOICE_PROVIDER`, `VAPI_VOICE_ID`, `VAPI_MODEL_NAME`, and `VAPI_SYSTEM_PROMPT` manually, or use `VAPI_ASSISTANT_ID`.
+
+A custom `HERMES_HOME` is not yet applied consistently. Plugin placement and `.env` handling use the selected home, but dependency installation still probes the default Hermes venv, and installer/runtime autostart defaults still use `~/.hermes/voice-vapi-autostart.json`. Until Issues [#24](https://github.com/Capslockb/vapi-discord-bridge/issues/24) and [#26](https://github.com/Capslockb/vapi-discord-bridge/issues/26) are resolved, install `plugin/requirements.txt` manually through the intended custom-home venv and set `DISCORD_VAPI_AUTOSTART_FILE` explicitly inside that home.
 
 ## Networking and control API
 
@@ -97,7 +99,7 @@ The plugin can start from either an autostart file or environment defaults.
 | Key | Default | Notes |
 |-----|---------|-------|
 | `DISCORD_VAPI_AUTOSTART` | _(false)_ | Set to `1`, `true`, or `yes` to schedule autostart without requiring the file. |
-| `DISCORD_VAPI_AUTOSTART_FILE` | `~/.hermes/voice-vapi-autostart.json` | Override the autostart JSON path. |
+| `DISCORD_VAPI_AUTOSTART_FILE` | `~/.hermes/voice-vapi-autostart.json` | Override the autostart JSON path. This default is currently fixed and does not follow `HERMES_HOME`; see Issue [#26](https://github.com/Capslockb/vapi-discord-bridge/issues/26). |
 | `DISCORD_VAPI_KEEP_AUTOSTART_FILE` | `0` | When false, a successful autostart deletes the JSON file. |
 | `DISCORD_VAPI_GUILD_ID` | _(empty)_ | Fallback guild ID when not present in the JSON file. |
 | `DISCORD_VAPI_CHANNEL_ID` | _(empty)_ | Fallback voice channel ID. |
@@ -105,7 +107,7 @@ The plugin can start from either an autostart file or environment defaults.
 
 The current slash-command wrappers do not receive or use the invoking member's Discord ID. Until [Issue #8](https://github.com/Capslockb/vapi-discord-bridge/issues/8) is resolved, both commands target the voice state of `DISCORD_VAPI_USER_ID`.
 
-Example:
+For the default Hermes home:
 
 ```bash
 mkdir -p ~/.hermes
@@ -119,7 +121,23 @@ EOF
 chmod 600 ~/.hermes/voice-vapi-autostart.json
 ```
 
-The file is deleted after a successful start unless `DISCORD_VAPI_KEEP_AUTOSTART_FILE=1`.
+For a custom Hermes home, do not rely on the installer's optional autostart step. Set an explicit file path and create the JSON there manually:
+
+```bash
+export HERMES_HOME=/srv/hermes-custom
+export DISCORD_VAPI_AUTOSTART_FILE="$HERMES_HOME/voice-vapi-autostart.json"
+mkdir -p "$HERMES_HOME"
+cat > "$DISCORD_VAPI_AUTOSTART_FILE" <<'EOF'
+{
+  "guild_id": "123456789012345678",
+  "channel_id": "123456789012345678",
+  "user_id": "123456789012345678"
+}
+EOF
+chmod 600 "$DISCORD_VAPI_AUTOSTART_FILE"
+```
+
+Ensure the gateway service receives `DISCORD_VAPI_AUTOSTART_FILE`; exporting it in an unrelated shell does not modify an already running service environment. The file is deleted after a successful start unless `DISCORD_VAPI_KEEP_AUTOSTART_FILE=1`.
 
 ## Transcripts and summaries
 
