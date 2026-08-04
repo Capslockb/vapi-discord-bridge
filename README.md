@@ -28,7 +28,7 @@ The installer performs:
 | 5 | Merge selected values into the selected Hermes home’s `.env` with mode `0600`. |
 | 6 | Optional autostart-file creation. |
 
-**Custom Hermes home warning:** plugin placement and `.env` writing honor `HERMES_HOME`, but the current dependency-install step still probes `~/.hermes/hermes-agent/venv/bin/python`. With a non-default `HERMES_HOME`, it can skip required dependencies or modify an unrelated default venv. Until [Issue #24](https://github.com/Capslockb/vapi-discord-bridge/issues/24) is resolved, use the default Hermes home or install `plugin/requirements.txt` manually through the intended custom venv after verifying the interpreter path.
+**Custom Hermes home warning:** plugin placement and `.env` reads/writes honor `HERMES_HOME`, but dependency installation still probes `~/.hermes/hermes-agent/venv/bin/python`, and the optional autostart step still creates and discovers `~/.hermes/voice-vapi-autostart.json` by default. A non-default home can therefore miss dependencies, modify an unrelated default venv, or share autostart state with another Hermes installation. Until Issues [#24](https://github.com/Capslockb/vapi-discord-bridge/issues/24) and [#26](https://github.com/Capslockb/vapi-discord-bridge/issues/26) are resolved, use the default Hermes home or install `plugin/requirements.txt` manually through the intended custom venv, set `DISCORD_VAPI_AUTOSTART_FILE` to an explicit path inside the custom home, and create the autostart JSON there manually.
 
 For a pre-seeded unattended repeat install:
 
@@ -110,7 +110,7 @@ The bridge runs in process with the Hermes gateway asyncio loop. It does not req
 
 ## Configuration
 
-By default, settings live in `~/.hermes/.env`. When `HERMES_HOME` is set, the installer reads and writes `$HERMES_HOME/.env` instead.
+The bridge reads its process environment. In a default Hermes installation, settings are normally sourced from `~/.hermes/.env`; when the installer runs with `HERMES_HOME` set, it reads and writes `$HERMES_HOME/.env` instead. Ensure the gateway is configured to load that selected file, or inject the same variables through its service environment.
 
 ### Required
 
